@@ -53,3 +53,8 @@ documents/*
 *.log
 *.sqlite3
 *.db
+
+# Model weights & large binaries
+*.gguf
+*.bin
+*.safetensors

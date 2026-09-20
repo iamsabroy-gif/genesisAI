@@ -1,0 +1,35 @@
+# ==============================================================================
+# Project Genesis: Ollama Modelfile for XHToken/Spark-X2.5-4B
+# Optimized for Apple Silicon M5 (16 GB Unified Memory)
+# ==============================================================================
+
+# Point this to your downloaded GGUF file
+# Download URL: https://huggingface.co/abenzerps/Spark-X2.5-4B-GGUF/resolve/main/Spark-X2.5-4B-Q4_K_M.gguf
+FROM ./Spark-X2.5-4B-Q4_K_M.gguf
+
+# ── Inference Parameters ───────────────────────────────────────────────────────
+# 32,768 token context fits easily inside Apple Silicon 16GB RAM with hybrid attention
+PARAMETER num_ctx 32768
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+
+# ── Chat Template (ChatML) ────────────────────────────────────────────────────
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{- end }}
+{{- range .Messages }}
+<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{- end }}
+<|im_start|>assistant
+"""
+
+# ── Special Token Boundaries ──────────────────────────────────────────────────
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+
+# ── System Persona Anchor ─────────────────────────────────────────────────────
+SYSTEM """You are Genesis Spark, a high-performance sovereign AI reasoning model. You excel at complex systems analysis, autonomous coding, and multi-angle research. Answer with technical precision, quantitative rigor, and zero conversational fluff."""
