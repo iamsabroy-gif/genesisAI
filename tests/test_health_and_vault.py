@@ -34,6 +34,49 @@ def test_system_health_watchdog():
     assert isinstance(is_safe, bool)
 
 
+def test_system_health_watchdog_scenarios(monkeypatch):
+    # Scenario 1: Abundant RAM (7.8 GB) with typical macOS dormant swap (1.8 GB) -> NOMINAL
+    mock_nominal_stats = {
+        "total_ram_mb": 16384.0,
+        "free_ram_mb": 500.0,
+        "inactive_ram_mb": 6000.0,
+        "active_ram_mb": 6000.0,
+        "wired_ram_mb": 2000.0,
+        "purgeable_ram_mb": 1300.0,
+        "available_ram_mb": 7800.0,
+        "swap_used_mb": 1884.0,
+        "swap_total_mb": 3072.0,
+        "vm_pressure_level": 1,
+        "vm_pressure_str": "NORMAL",
+    }
+    monkeypatch.setattr(SystemHealthWatchdog, "get_memory_stats", lambda: dict(mock_nominal_stats))
+    status, msg, _ = SystemHealthWatchdog.evaluate_health_ceiling()
+    assert status == "NOMINAL"
+    assert "System healthy" in msg
+
+    # Scenario 2: Low Available RAM (1800 MB < 2200 MB warning) -> WARNING
+    mock_warn_stats = dict(mock_nominal_stats)
+    mock_warn_stats["available_ram_mb"] = 1800.0
+    monkeypatch.setattr(SystemHealthWatchdog, "get_memory_stats", lambda: dict(mock_warn_stats))
+    status, msg, _ = SystemHealthWatchdog.evaluate_health_ceiling()
+    assert status == "WARNING"
+    assert "Elevated memory pressure" in msg
+
+    # Scenario 3: Critically Low RAM (800 MB < 1200 MB min) -> CRITICAL
+    mock_crit_stats = dict(mock_nominal_stats)
+    mock_crit_stats["available_ram_mb"] = 800.0
+    monkeypatch.setattr(SystemHealthWatchdog, "get_memory_stats", lambda: dict(mock_crit_stats))
+    status, msg, _ = SystemHealthWatchdog.evaluate_health_ceiling()
+    assert status == "CRITICAL"
+    assert "Memory pressure critical" in msg
+
+    # Scenario 4: User bypass flag GENESIS_DISABLE_HEALTH_GUARD=1
+    monkeypatch.setenv("GENESIS_DISABLE_HEALTH_GUARD", "1")
+    status, msg, _ = SystemHealthWatchdog.evaluate_health_ceiling()
+    assert status == "NOMINAL"
+    assert "Health guard bypass active" in msg
+
+
 def test_chunk_text():
     sample = "Paragraph 1 is here.\n\nParagraph 2 is here.\n\nParagraph 3 is here."
     chunks = chunk_text(sample, chunk_size=30, overlap=10)
