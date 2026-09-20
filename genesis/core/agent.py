@@ -668,6 +668,13 @@ class GenesisAgent:
             return final_answer
         finally:
             self.is_running_task = False
+            try:
+                from genesis.core.models import ModelManager
+                cfg = ModelManager.load_config()
+                if cfg.get("auto_stop_when_done", False):
+                    self.unload_model()
+            except Exception:
+                pass
 
     def close(self, user_feedback: int = 0, unload_model: bool = True) -> str:
         """Finalize session, score trajectory, and record to disk. Frees Unified RAM."""
@@ -679,10 +686,11 @@ class GenesisAgent:
         return str(path)
 
     def unload_model(self) -> bool:
-        """Explicitly instruct Ollama to evict model weights from volatile Unified RAM immediately."""
+        """Instructs active provider to evict model weights from volatile Unified RAM immediately."""
         try:
-            from genesis.core.kill_switch import evict_all_models_from_vram
-            evict_all_models_from_vram()
-            return True
+            from genesis.core.models import ModelManager
+            res = ModelManager.stop_provider(unload_only=True)
+            return res.get("status") == "ok"
         except Exception:
             return False
+

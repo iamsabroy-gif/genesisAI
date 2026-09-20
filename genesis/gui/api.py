@@ -28,6 +28,18 @@ class GenesisDesktopApi:
         self._current_worker_thread: Optional[threading.Thread] = None
         self._is_busy = False
 
+    def _check_auto_stop(self):
+        """Purges loaded models from RAM if auto-stop is enabled."""
+        try:
+            from genesis.core.models import ModelManager
+            cfg = ModelManager.load_config()
+            if cfg.get("auto_stop_when_done", False):
+                ModelManager.stop_provider(unload_only=True)
+                st = ModelManager.get_provider_status()
+                self._emit("provider_status_changed", st)
+        except Exception:
+            pass
+
     def set_window(self, window):
         """Set pywebview window handle for evaluate_js callbacks."""
         self.window = window
@@ -183,6 +195,7 @@ class GenesisDesktopApi:
                 self._emit("task_error", {"error": str(e)})
             finally:
                 self._is_busy = False
+                self._check_auto_stop()
                 self._emit("idle", {})
 
         self._current_worker_thread = threading.Thread(target=_worker, daemon=True)
@@ -214,6 +227,7 @@ class GenesisDesktopApi:
                 self._emit("swarm_error", {"error": str(e)})
             finally:
                 self._is_busy = False
+                self._check_auto_stop()
                 self._emit("idle", {})
 
         self._current_worker_thread = threading.Thread(target=_worker, daemon=True)
@@ -267,6 +281,7 @@ class GenesisDesktopApi:
                 self._emit("research_swarm_error", {"error": str(e)})
             finally:
                 self._is_busy = False
+                self._check_auto_stop()
                 self._emit("idle", {})
 
         self._current_worker_thread = threading.Thread(target=_worker, daemon=True)
@@ -302,6 +317,7 @@ class GenesisDesktopApi:
                 self._emit("pipeline_error", {"error": str(e)})
             finally:
                 self._is_busy = False
+                self._check_auto_stop()
                 self._emit("idle", {})
 
         self._current_worker_thread = threading.Thread(target=_worker, daemon=True)
@@ -362,16 +378,47 @@ class GenesisDesktopApi:
         return {"status": "cleared"}
 
     def get_model_config(self) -> Dict[str, Any]:
-        """Returns current model, server URL, provider, and available presets."""
+        """Returns current model, server URL, provider, presets, and auto_stop preference."""
         from genesis.core.models import ModelManager
         cfg = ModelManager.load_config()
         presets = ModelManager.get_presets()
+        provider_status = ModelManager.get_provider_status(cfg.get("provider", "ollama"))
         return {
             "current_model": self.agent.model_name,
             "current_base_url": cfg.get("base_url"),
             "current_provider": cfg.get("provider", "ollama"),
+            "auto_stop_when_done": cfg.get("auto_stop_when_done", False),
+            "provider_status": provider_status,
             "presets": presets,
         }
+
+    def get_provider_status(self, provider_id: Optional[str] = None) -> Dict[str, Any]:
+        """Returns live server status, loaded models, and CLI availability for provider."""
+        from genesis.core.models import ModelManager
+        return ModelManager.get_provider_status(provider_id)
+
+    def start_provider(self, provider_id: str) -> Dict[str, Any]:
+        """Starts the local provider server (e.g. Ollama or LM Studio)."""
+        from genesis.core.models import ModelManager
+        res = ModelManager.start_provider(provider_id)
+        status = ModelManager.get_provider_status(provider_id)
+        self._emit("provider_status_changed", status)
+        return res
+
+    def stop_provider(self, provider_id: Optional[str] = None, unload_only: bool = False) -> Dict[str, Any]:
+        """Stops the provider server or unloads models from Unified RAM."""
+        from genesis.core.models import ModelManager
+        res = ModelManager.stop_provider(provider_id, unload_only=unload_only)
+        status = ModelManager.get_provider_status(provider_id)
+        self._emit("provider_status_changed", status)
+        return res
+
+    def set_auto_stop(self, enabled: bool) -> Dict[str, Any]:
+        """Configures auto-stop / auto-unload upon task completion."""
+        from genesis.core.models import ModelManager
+        res = ModelManager.set_auto_stop(enabled)
+        self._emit("auto_stop_changed", res)
+        return res
 
     def fetch_server_models(self, base_url: str, api_key: str = "") -> Dict[str, Any]:
         """Fetches models available at the specified server endpoint."""
@@ -395,6 +442,8 @@ class GenesisDesktopApi:
             provider=provider,
         )
         self._emit("model_switched", res)
+        status = ModelManager.get_provider_status(res.get("provider"))
+        self._emit("provider_status_changed", status)
         return res
 
     def get_skills(self) -> List[Dict[str, Any]]:

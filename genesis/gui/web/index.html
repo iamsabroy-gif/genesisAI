@@ -1034,6 +1034,47 @@
             </div>
           </div>
 
+          <!-- Provider Control & Lifecycle Bar -->
+          <div class="swarm-header-card" style="border-left: 3px solid var(--accent-cyan); margin-top: 4px; margin-bottom: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <h4 style="font-size: 12px; text-transform: uppercase; font-weight: 600; color: var(--text-muted); margin-bottom: 3px;">
+                  Provider Lifecycle & RAM Management
+                </h4>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                  <span id="providerBadgeName" style="font-weight: 700; color: #fff;">Ollama</span>
+                  <span id="providerStatusDot" class="badge-silicon" style="color: var(--accent-green); border-color: rgba(74, 222, 128, 0.3); font-size: 11px;">
+                    ● Server Running
+                  </span>
+                  <span id="providerLoadedSummary" style="font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);">
+                    RAM: Cold (0 models loaded)
+                  </span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <button id="btnStartProvider" class="btn-send" style="padding: 6px 14px; font-size: 11.5px; background: #22c55e; color: #052e16;" onclick="startSelectedProvider()">
+                  ▶ Start Server
+                </button>
+                <button id="btnStopProvider" class="master-btn" style="padding: 6px 14px; font-size: 11.5px; border-color: rgba(239, 68, 68, 0.5); color: #f87171;" onclick="stopSelectedProvider(false)">
+                  ⏹ Stop Server
+                </button>
+                <button id="btnUnloadProvider" class="master-btn" style="padding: 6px 14px; font-size: 11.5px; border-color: rgba(56, 189, 248, 0.4); color: var(--accent-cyan);" onclick="stopSelectedProvider(true)">
+                  🧹 Free RAM (Unload)
+                </button>
+              </div>
+            </div>
+
+            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+              <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); cursor: pointer;">
+                <input type="checkbox" id="chkAutoStop" onchange="toggleAutoStop(this.checked)" style="accent-color: var(--accent-cyan); width: 14px; height: 14px; cursor: pointer;" />
+                <span><strong>Auto-stop / unload model from RAM when task finishes</strong> (Keeps Mac cool, eliminates idle VRAM lock)</span>
+              </label>
+              <button class="master-btn" style="padding: 4px 10px; font-size: 11px;" onclick="refreshProviderStatus()">
+                ↻ Refresh Status
+              </button>
+            </div>
+          </div>
+
           <div>
             <h4 style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; font-weight: 600;">
               Quick Provider Presets
@@ -1695,6 +1736,11 @@
         setBusy(false);
       } else if (evt === 'idle') {
         setBusy(false);
+      } else if (evt === 'provider_status_changed') {
+        updateProviderStatusUI(d);
+      } else if (evt === 'auto_stop_changed') {
+        const chk = document.getElementById('chkAutoStop');
+        if (chk) chk.checked = !!d.auto_stop_when_done;
       }
     };
 
@@ -1724,8 +1770,19 @@
       document.getElementById('inputBaseUrl').value = cfg.current_base_url || '';
       document.getElementById('inputTargetModel').value = cfg.current_model || '';
 
+      const chkAutoStop = document.getElementById('chkAutoStop');
+      if (chkAutoStop) {
+        chkAutoStop.checked = !!cfg.auto_stop_when_done;
+      }
+
       currentPresets = cfg.presets || [];
       currentProvider = cfg.current_provider || 'custom';
+
+      if (cfg.provider_status) {
+        updateProviderStatusUI(cfg.provider_status);
+      } else {
+        refreshProviderStatus();
+      }
 
       const container = document.getElementById('presetsContainer');
       container.innerHTML = '';
@@ -1733,6 +1790,15 @@
       currentPresets.forEach(p => {
         const card = document.createElement('div');
         const isActive = (p.id === currentProvider);
+        let statusBadge = '';
+        if (p.type === 'server') {
+          statusBadge = '<span style="color:var(--accent-cyan); font-size:10px;">☁ Cloud</span>';
+        } else if (p.is_running) {
+          statusBadge = '<span style="color:var(--accent-green); font-size:10px;">● Running</span>';
+        } else {
+          statusBadge = '<span style="color:var(--text-muted); font-size:10px;">○ Offline</span>';
+        }
+
         card.style.cssText = `
           background: ${isActive ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-card)'};
           border: 1px solid ${isActive ? 'var(--accent-cyan)' : 'var(--border-color)'};
@@ -1742,13 +1808,135 @@
           transition: all 0.15s ease;
         `;
         card.innerHTML = `
-          <div style="font-size: 11.5px; font-weight: 700; color: #fff; margin-bottom: 3px;">${p.name}</div>
-          <div style="font-size: 10px; font-family: var(--font-mono); color: var(--text-muted);">${p.base_url}</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+            <div style="font-size: 11.5px; font-weight: 700; color: #fff;">${p.name}</div>
+            <div>${statusBadge}</div>
+          </div>
+          <div style="font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.base_url}</div>
           <div style="font-size: 10px; color: var(--accent-cyan); margin-top: 4px;">Default: ${p.default_model}</div>
         `;
         card.onclick = () => selectPreset(p);
         container.appendChild(card);
       });
+    }
+
+    function updateProviderStatusUI(st) {
+      if (!st) return;
+      const nameEl = document.getElementById('providerBadgeName');
+      const dotEl = document.getElementById('providerStatusDot');
+      const loadedEl = document.getElementById('providerLoadedSummary');
+      const btnStart = document.getElementById('btnStartProvider');
+      const btnStop = document.getElementById('btnStopProvider');
+      const btnUnload = document.getElementById('btnUnloadProvider');
+
+      if (nameEl) nameEl.innerText = st.name || st.provider || currentProvider;
+
+      if (st.type === 'server') {
+        if (dotEl) {
+          dotEl.innerText = '☁ Cloud Server (Always Ready)';
+          dotEl.style.color = 'var(--accent-cyan)';
+          dotEl.style.borderColor = 'rgba(56, 189, 248, 0.3)';
+        }
+        if (loadedEl) loadedEl.innerText = st.has_key ? 'API Key Configured' : 'No API Key set';
+        if (btnStart) { btnStart.disabled = true; btnStart.style.opacity = '0.4'; btnStart.style.cursor = 'not-allowed'; }
+        if (btnStop) { btnStop.disabled = true; btnStop.style.opacity = '0.4'; btnStop.style.cursor = 'not-allowed'; }
+        if (btnUnload) { btnUnload.disabled = true; btnUnload.style.opacity = '0.4'; btnUnload.style.cursor = 'not-allowed'; }
+        return;
+      }
+
+      if (st.is_running) {
+        if (dotEl) {
+          dotEl.innerText = `● Server Running (Port ${st.port || '?'})`;
+          dotEl.style.color = 'var(--accent-green)';
+          dotEl.style.borderColor = 'rgba(74, 222, 128, 0.3)';
+        }
+        const models = st.loaded_models || [];
+        if (loadedEl) {
+          if (models.length > 0) {
+            loadedEl.innerText = `RAM Loaded: [${models.join(', ')}]`;
+            loadedEl.style.color = 'var(--accent-cyan)';
+          } else {
+            loadedEl.innerText = 'RAM: Cold (0 models loaded)';
+            loadedEl.style.color = 'var(--text-muted)';
+          }
+        }
+        if (btnStart) { btnStart.disabled = true; btnStart.style.opacity = '0.4'; btnStart.style.cursor = 'not-allowed'; }
+        if (btnStop) { btnStop.disabled = false; btnStop.style.opacity = '1.0'; btnStop.style.cursor = 'pointer'; }
+        if (btnUnload) { btnUnload.disabled = false; btnUnload.style.opacity = '1.0'; btnUnload.style.cursor = 'pointer'; }
+      } else {
+        if (dotEl) {
+          dotEl.innerText = `○ Server Stopped (Port ${st.port || '?'})`;
+          dotEl.style.color = '#f87171';
+          dotEl.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+        }
+        if (loadedEl) {
+          loadedEl.innerText = 'Server Offline (VRAM Inactive)';
+          loadedEl.style.color = 'var(--text-muted)';
+        }
+        if (btnStart) { btnStart.disabled = false; btnStart.style.opacity = '1.0'; btnStart.style.cursor = 'pointer'; }
+        if (btnStop) { btnStop.disabled = true; btnStop.style.opacity = '0.4'; btnStop.style.cursor = 'not-allowed'; }
+        if (btnUnload) { btnUnload.disabled = true; btnUnload.style.opacity = '0.4'; btnUnload.style.cursor = 'not-allowed'; }
+      }
+    }
+
+    function refreshProviderStatus() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_provider_status(currentProvider).then(st => {
+          updateProviderStatusUI(st);
+        });
+      }
+    }
+
+    function startSelectedProvider() {
+      logModel(`Requesting to start server for '${currentProvider}'...`);
+      const btnStart = document.getElementById('btnStartProvider');
+      if (btnStart) {
+        btnStart.disabled = true;
+        btnStart.innerText = '⏳ Starting...';
+      }
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.start_provider(currentProvider).then(res => {
+          if (btnStart) btnStart.innerText = '▶ Start Server';
+          logModel(`[Server Manager]: ${res.message}`);
+          refreshProviderStatus();
+          onOpenModelsTab();
+        }).catch(err => {
+          if (btnStart) btnStart.innerText = '▶ Start Server';
+          logModel(`[Server Error]: ${err}`);
+          refreshProviderStatus();
+        });
+      }
+    }
+
+    function stopSelectedProvider(unloadOnly) {
+      const actionName = unloadOnly ? 'Unload Models / Free RAM' : 'Stop Server';
+      logModel(`Requesting '${actionName}' for '${currentProvider}'...`);
+      const btn = unloadOnly ? document.getElementById('btnUnloadProvider') : document.getElementById('btnStopProvider');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = unloadOnly ? '⏳ Freeing...' : '⏳ Stopping...';
+      }
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.stop_provider(currentProvider, unloadOnly).then(res => {
+          if (btn) btn.innerText = unloadOnly ? '🧹 Free RAM (Unload)' : '⏹ Stop Server';
+          logModel(`[Server Manager]: ${res.message}`);
+          refreshProviderStatus();
+          onOpenModelsTab();
+        }).catch(err => {
+          if (btn) btn.innerText = unloadOnly ? '🧹 Free RAM (Unload)' : '⏹ Stop Server';
+          logModel(`[Server Error]: ${err}`);
+          refreshProviderStatus();
+        });
+      }
+    }
+
+    function toggleAutoStop(enabled) {
+      logModel(`Setting auto-stop when done to: ${enabled ? 'ENABLED' : 'DISABLED'}`);
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.set_auto_stop(enabled).then(res => {
+          logModel(`Auto-stop preference saved (${res.auto_stop_when_done ? 'ON' : 'OFF'}). Models will ${res.auto_stop_when_done ? 'automatically unload from RAM' : 'remain hot in RAM'} after tasks.`);
+        });
+      }
     }
 
     function selectPreset(preset) {
@@ -1760,6 +1948,9 @@
       }
       logModel(`Selected preset: ${preset.name}. Click 'Scan' to verify models or 'Activate' to switch.`);
       if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_provider_status(preset.id).then(st => {
+          updateProviderStatusUI(st);
+        });
         window.pywebview.api.get_model_config().then(cfg => {
           cfg.current_provider = preset.id;
           renderModelConfig(cfg);

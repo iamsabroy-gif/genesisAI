@@ -165,3 +165,36 @@ def test_gui_api_pick_research_context():
     assert len(res["paths"]) == 2
     assert "/Users/test/paper.pdf" in res["paths"]
 
+
+def test_gui_api_provider_lifecycle(tmp_path):
+    fake_config_file = tmp_path / "model_config.json"
+    with patch("genesis.core.models.MODEL_CONFIG_FILE", fake_config_file):
+        agent = GenesisAgent()
+        api = GenesisDesktopApi(agent=agent)
+        mock_window = MagicMock()
+        api.set_window(mock_window)
+
+        # 1. Get status
+        status = api.get_provider_status("ollama")
+        assert status["provider"] == "ollama"
+        assert "is_running" in status
+
+        # 2. Start provider
+        with patch("genesis.core.models.ModelManager.start_provider", return_value={"status": "ok", "message": "started"}):
+            start_res = api.start_provider("lmstudio")
+            assert start_res["status"] == "ok"
+            # Verify event emission
+            calls = [c[0][0] for c in mock_window.evaluate_js.call_args_list]
+            assert any("provider_status_changed" in c for c in calls)
+
+        # 3. Stop provider
+        with patch("genesis.core.models.ModelManager.stop_provider", return_value={"status": "ok", "message": "stopped"}):
+            stop_res = api.stop_provider("lmstudio", unload_only=True)
+            assert stop_res["status"] == "ok"
+
+        # 4. Set auto stop
+        auto_res = api.set_auto_stop(True)
+        assert auto_res["status"] == "ok"
+        assert auto_res["auto_stop_when_done"] is True
+
+
