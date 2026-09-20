@@ -673,7 +673,10 @@ class ResearchSwarmCoordinator:
 
         # Context backup for isolation
         _saved_messages = list(self.agent.messages)
-        system_base = _saved_messages[0]
+        system_base = next(
+            (m for m in _saved_messages if isinstance(m, dict) and m.get("role") == "system"),
+            {"role": "system", "content": "You are Project Genesis sovereign intelligence engine."},
+        )
 
         try:
             # =========================================================================
@@ -952,6 +955,19 @@ class ResearchSwarmCoordinator:
             )
             self.agent.messages = [system_base]
             final_report_content = self.agent.run_turn(editor_prompt)
+
+            # If an inference error occurred, attempt recovery with clean prompt
+            if final_report_content.startswith("LLM Inference Error:"):
+                console.print(f"[bold yellow]⚠️ Editor turn returned inference error; attempting clean retry...[/bold yellow]")
+                self.agent.messages = [system_base]
+                retry_prompt = (
+                    f"Author the final publication research report for '{topic}' in Markdown format.\n\n"
+                    f"Format: # {fmt['title_prefix']}: {topic}\n\n"
+                    f"SECTIONS TO INCLUDE:\n{sections_spec}\n\n"
+                    f"ANALYTICAL HIGHLIGHTS:\n{analyst_output[:2000]}\n\n"
+                    f"VERIFIED CITATIONS:\n{citations_md[:2000]}"
+                )
+                final_report_content = self.agent.run_turn(retry_prompt)
 
             # Ensure markdown header
             if not final_report_content.strip().startswith("#"):

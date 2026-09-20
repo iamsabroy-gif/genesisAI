@@ -298,9 +298,13 @@ class GenesisAgent:
             "options": {"num_ctx": self.max_context_tokens},  # Request exact context window from Ollama
         }
 
+        from genesis.core.context import sanitize_messages
+        sanitized_messages = sanitize_messages(self.messages)
+        self.messages = sanitized_messages
+
         stream = self.client.chat.completions.create(
             model=active_model,
-            messages=self.messages,
+            messages=sanitized_messages,
             tools=active_schemas,
             temperature=self._current_temperature,
             stream=True,

@@ -184,12 +184,13 @@ def _message_priority(msg: Any, idx: int, total: int, now: float = 0.0) -> float
     Scoring rules:
     - System anchor (idx 0)         → ∞  (never evict)
     - Initial user goal (idx 1)     → ∞  (never evict)
+    - Current active prompt (last)  → ∞  (never evict)
     - Tool observation (large)      → 0.1 → 0.3 based on recency
     - Old assistant turns (>3 back) → 0.3
     - Recent assistant (last 2)     → 0.9
     - User turn (non-goal)          → 0.5
     """
-    if idx <= 1:
+    if idx <= 1 or idx >= total - 1:
         return float("inf")
 
     role = _get_field(msg, "role", "user")
@@ -230,30 +231,142 @@ def _smart_compress_tool_output(content: str) -> str:
     return compressed
 
 
+def sanitize_messages(messages: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Normalizes, repairs, and sanitizes chat completion message sequences to guarantee
+    strict compliance with OpenAI, Ollama, Anthropic, and vLLM API contracts.
+
+    Guarantees:
+    1. Never allows consecutive messages of the same role (merges assistant+assistant, user+user).
+    2. Never allows 2 or more assistant messages at the end of the list.
+    3. Guarantees every tool response has a valid preceding assistant tool_call.
+    4. Converts orphaned tool observations into valid user observations.
+    5. Returns clean dictionaries with valid string content.
+    """
+    if not messages:
+        return []
+
+    cleaned: List[Dict[str, Any]] = []
+    for m in messages:
+        if isinstance(m, dict):
+            item = dict(m)
+        elif hasattr(m, "model_dump"):
+            item = m.model_dump(exclude_unset=True)
+        else:
+            item = {
+                "role": getattr(m, "role", "user"),
+                "content": getattr(m, "content", ""),
+            }
+        if "role" not in item:
+            item["role"] = "user"
+        if "content" not in item or item["content"] is None:
+            item["content"] = ""
+        cleaned.append(item)
+
+    # Step 1: Merge consecutive messages with the same role (assistant + assistant, user + user)
+    merged: List[Dict[str, Any]] = []
+    for msg in cleaned:
+        if not merged:
+            merged.append(msg)
+            continue
+
+        prev = merged[-1]
+        prev_role = prev.get("role")
+        curr_role = msg.get("role")
+
+        if prev_role == curr_role and curr_role in ["assistant", "user", "system"]:
+            prev_content = str(prev.get("content") or "").strip()
+            curr_content = str(msg.get("content") or "").strip()
+            if prev_content and curr_content:
+                prev["content"] = f"{prev_content}\n\n{curr_content}"
+            elif curr_content:
+                prev["content"] = curr_content
+
+            if curr_role == "assistant":
+                prev_tc = prev.get("tool_calls") or []
+                curr_tc = msg.get("tool_calls") or []
+                if curr_tc:
+                    prev["tool_calls"] = prev_tc + curr_tc
+        else:
+            merged.append(msg)
+
+    # Step 2: Validate tool call sequencing
+    validated: List[Dict[str, Any]] = []
+    active_tool_ids = set()
+    for msg in merged:
+        role = msg.get("role")
+        if role == "assistant":
+            tc_list = msg.get("tool_calls") or []
+            active_tool_ids = {tc.get("id") for tc in tc_list if isinstance(tc, dict) and tc.get("id")}
+            validated.append(msg)
+        elif role == "tool":
+            tc_id = msg.get("tool_call_id")
+            if tc_id and tc_id in active_tool_ids:
+                validated.append(msg)
+            else:
+                # Convert orphaned tool observation to user observation
+                tool_name = msg.get("name", "tool")
+                content = msg.get("content", "")
+                validated.append({
+                    "role": "user",
+                    "content": f"[Observation from {tool_name}]:\n{content}",
+                })
+                active_tool_ids.clear()
+        else:
+            active_tool_ids.clear()
+            validated.append(msg)
+
+    # Step 3: Second merge pass after orphaned tool conversion
+    final_msgs: List[Dict[str, Any]] = []
+    for msg in validated:
+        if not final_msgs:
+            final_msgs.append(msg)
+            continue
+        prev = final_msgs[-1]
+        if prev.get("role") == msg.get("role") and msg.get("role") in ["assistant", "user"]:
+            p_c = str(prev.get("content") or "").strip()
+            c_c = str(msg.get("content") or "").strip()
+            prev["content"] = f"{p_c}\n\n{c_c}" if (p_c and c_c) else (c_c or p_c)
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                prev["tool_calls"] = (prev.get("tool_calls") or []) + msg["tool_calls"]
+        else:
+            final_msgs.append(msg)
+
+    # Step 4: Ensure never ending with 2 or more assistant messages
+    while len(final_msgs) >= 2 and final_msgs[-1].get("role") == "assistant" and final_msgs[-2].get("role") == "assistant":
+        last = final_msgs.pop()
+        pen = final_msgs[-1]
+        p_c = str(pen.get("content") or "").strip()
+        l_c = str(last.get("content") or "").strip()
+        pen["content"] = f"{p_c}\n\n{l_c}" if (p_c and l_c) else (l_c or p_c)
+
+    return final_msgs
+
+
 def prune_context(
     messages: List[Any],
     trigger_tokens: int = PRUNE_TRIGGER_TOKENS,
     target_tokens: int = TARGET_HISTORY_TOKENS,
 ) -> List[Any]:
     """
-    C1: Priority-Weighted Pruning (replaces blind FIFO from algo.md).
+    C1: Priority-Weighted Pruning with Conversation Structure Integrity.
 
     Algorithm:
     1. Skip if under trigger threshold.
-    2. Score all messages[2:] by role, recency, and content size.
+    2. Score all non-anchor messages (idx 0, 1, and latest are protected).
     3. Phase 1: Compress large tool observations (>300 chars) using smart extraction.
     4. Phase 2: Evict lowest-scored messages until under target.
-    5. messages[0] (system) and messages[1] (initial user goal) are always preserved.
+    5. Phase 3: Sanitize message chain to guarantee alternating roles & no consecutive assistants.
     """
     current_tokens = estimate_messages_tokens(messages)
     if current_tokens <= trigger_tokens:
-        return messages
+        return sanitize_messages(messages)
 
     pruned = list(messages)
     now = time.time()
 
     # Phase 1: Smart-compress oversized tool observations
-    for i in range(2, len(pruned)):
+    for i in range(2, len(pruned) - 1):
         role = _get_field(pruned[i], "role")
         if role == "tool":
             content = str(_get_field(pruned[i], "content", ""))
@@ -264,15 +377,15 @@ def prune_context(
                     pruned[i]["content"] = compressed
 
         if estimate_messages_tokens(pruned) <= target_tokens:
-            return pruned
+            return sanitize_messages(pruned)
 
     # Phase 2: Priority-weighted eviction — lowest score evicted first
     while len(pruned) > 4 and estimate_messages_tokens(pruned) > target_tokens:
         total = len(pruned)
-        # Score all non-anchored messages
+        # Score all non-anchored messages (0, 1, and last message are protected)
         scored = [
             (i, _message_priority(pruned[i], i, total, now))
-            for i in range(2, total)
+            for i in range(2, total - 1)
         ]
         if not scored:
             break
@@ -280,7 +393,7 @@ def prune_context(
         evict_idx = min(scored, key=lambda x: x[1])[0]
         pruned.pop(evict_idx)
 
-    return pruned
+    return sanitize_messages(pruned)
 
 
 def parse_context_size(size_str: str) -> Optional[int]:

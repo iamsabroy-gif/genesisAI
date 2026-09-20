@@ -157,3 +157,60 @@ def test_gui_api_context_scaling():
     assert agent.max_context_tokens == 32768
 
 
+def test_sanitize_messages():
+    from genesis.core.context import sanitize_messages
+
+    # Test 1: Merging consecutive assistant messages
+    raw = [
+        {"role": "system", "content": "You are Genesis."},
+        {"role": "user", "content": "Query 1"},
+        {"role": "assistant", "content": "Assistant thought 1"},
+        {"role": "assistant", "content": "Assistant thought 2"},
+    ]
+    cleaned = sanitize_messages(raw)
+    assert len(cleaned) == 3
+    assert cleaned[0]["role"] == "system"
+    assert cleaned[1]["role"] == "user"
+    assert cleaned[2]["role"] == "assistant"
+    assert "Assistant thought 1" in cleaned[2]["content"]
+    assert "Assistant thought 2" in cleaned[2]["content"]
+
+    # Test 2: Merging consecutive user messages
+    raw_user = [
+        {"role": "system", "content": "You are Genesis."},
+        {"role": "user", "content": "Part 1"},
+        {"role": "user", "content": "Part 2"},
+    ]
+    cleaned_user = sanitize_messages(raw_user)
+    assert len(cleaned_user) == 2
+    assert cleaned_user[1]["role"] == "user"
+    assert "Part 1\n\nPart 2" in cleaned_user[1]["content"]
+
+    # Test 3: Orphaned tool conversion
+    raw_tool = [
+        {"role": "system", "content": "You are Genesis."},
+        {"role": "user", "content": "Run tool"},
+        {"role": "tool", "name": "web_search", "content": "Search results", "tool_call_id": "orphan_123"},
+        {"role": "assistant", "content": "Done."},
+    ]
+    cleaned_tool = sanitize_messages(raw_tool)
+    # The orphaned tool must be converted to user observation
+    roles = [m["role"] for m in cleaned_tool]
+    assert "tool" not in roles
+    assert any("[Observation from web_search]" in m.get("content", "") for m in cleaned_tool)
+
+    # Test 4: Guarantee never ending with 2 or more assistant messages
+    raw_end = [
+        {"role": "system", "content": "You are Genesis."},
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Response A"},
+        {"role": "assistant", "content": "Response B"},
+        {"role": "assistant", "content": "Response C"},
+    ]
+    cleaned_end = sanitize_messages(raw_end)
+    assert len(cleaned_end) == 3
+    assert cleaned_end[-1]["role"] == "assistant"
+    assert "Response A" in cleaned_end[-1]["content"]
+    assert "Response C" in cleaned_end[-1]["content"]
+
+
