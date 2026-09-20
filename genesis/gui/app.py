@@ -11,7 +11,15 @@ from typing import Optional
 from genesis.core.agent import GenesisAgent
 from genesis.gui.api import GenesisDesktopApi
 
-WEB_DIR = Path(__file__).parent / "web"
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    candidate = Path(sys._MEIPASS) / "genesis" / "gui" / "web"
+    if candidate.exists():
+        WEB_DIR = candidate
+    else:
+        WEB_DIR = Path(__file__).resolve().parent / "web"
+else:
+    WEB_DIR = Path(__file__).resolve().parent / "web"
+
 INDEX_HTML = WEB_DIR / "index.html"
 
 
