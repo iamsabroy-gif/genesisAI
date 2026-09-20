@@ -117,3 +117,51 @@ def test_gui_api_send_prompt_research_formats_intercept():
     assert res["status"] == "completed"
     assert "Genesis Research Swarm: Available Report Formats" in res["response"]
 
+
+def test_gui_api_run_research_swarm_with_starting_context():
+    agent = GenesisAgent()
+    api = GenesisDesktopApi(agent=agent)
+    mock_window = MagicMock()
+    api.set_window(mock_window)
+
+    with patch("genesis.core.research_swarm.ResearchSwarmCoordinator.run_research_swarm", return_value={"status": "GOAL_ACHIEVED"}) as mock_run:
+        res = api.run_research_swarm(
+            "Solid-State Batteries",
+            report_format="technical",
+            target_urls=15,
+            starting_context=["./paper.pdf", "https://example.com/seed"],
+        )
+        assert res["status"] == "started"
+        assert res["has_starting_context"] is True
+
+
+def test_gui_api_send_prompt_research_with_context_flag():
+    agent = GenesisAgent()
+    api = GenesisDesktopApi(agent=agent)
+    mock_window = MagicMock()
+    api.set_window(mock_window)
+
+    with patch.object(api, "run_research_swarm", return_value={"status": "started"}) as mock_run:
+        res = api.send_prompt("/research Solid-State Battery Commercialization --format executive --urls 15 --context https://arxiv.org/abs/1234,./notes.md")
+        assert res["status"] == "started"
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        assert args[0] == "Solid-State Battery Commercialization"
+        assert kwargs["report_format"] == "executive"
+        assert kwargs["target_urls"] == 15
+        assert "https://arxiv.org/abs/1234" in kwargs["starting_context"]
+        assert "./notes.md" in kwargs["starting_context"]
+
+
+def test_gui_api_pick_research_context():
+    agent = GenesisAgent()
+    api = GenesisDesktopApi(agent=agent)
+    mock_window = MagicMock()
+    mock_window.create_file_dialog.return_value = ["/Users/test/paper.pdf", "/Users/test/docs"]
+    api.set_window(mock_window)
+
+    res = api.pick_research_context(folder_mode=False)
+    assert res["status"] == "ok"
+    assert len(res["paths"]) == 2
+    assert "/Users/test/paper.pdf" in res["paths"]
+

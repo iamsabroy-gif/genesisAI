@@ -13,12 +13,12 @@ GENESIS_SKILLS: List[Dict[str, Any]] = [
     {
         "id": "research_swarm",
         "name": "5-Phase Process-Oriented Research Swarm",
-        "command": "/research <topic> [--format <type>]",
+        "command": "/research <topic> [--format <type>] [--context <url|file|folder>]",
         "category": "Deep Research",
         "icon": "🔬",
-        "description": "Multi-agent academic pipeline (Architect → Intelligence Recon → Systems Modeler → Red Team Auditor → Chief Editor) producing tailored Markdown dossiers across 5 formats (Comprehensive, Executive, Technical, Market, Due Diligence).",
-        "tools": ["web_search", "web_scrape", "web_research", "vault_index_file"],
-        "example": "/research Solid-State Battery Commercialization 2026 --format executive",
+        "description": "Multi-agent academic pipeline (Architect → Intelligence Recon → Systems Modeler → Red Team Auditor → Chief Editor) producing tailored Markdown dossiers across 5 formats. Supports starting context via uploaded files, folders, or seed URLs.",
+        "tools": ["web_search", "web_scrape", "web_research", "vault_index_file", "convert_pdf_to_markdown"],
+        "example": "/research Solid-State Battery Commercialization 2026 --format executive --context ./whitepaper.pdf",
     },
     {
         "id": "web_research",

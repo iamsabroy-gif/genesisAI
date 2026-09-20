@@ -434,6 +434,31 @@
       border-color: var(--accent-cyan);
     }
 
+    .context-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(0, 229, 255, 0.12);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 11px;
+      color: #e0f7fa;
+      max-width: 280px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .context-chip .chip-remove {
+      cursor: pointer;
+      font-weight: bold;
+      color: #ff5252;
+      margin-left: 4px;
+    }
+    .context-chip .chip-remove:hover {
+      color: #ff1744;
+    }
+
     .upload-dropdown {
       position: absolute;
       bottom: calc(100% + 6px);
@@ -815,6 +840,34 @@
               <div id="formatDescriptionBadge" style="font-size: 11px; color: var(--text-secondary); background: rgba(0, 229, 255, 0.06); border: 1px solid rgba(0, 229, 255, 0.15); padding: 3px 8px; border-radius: 4px;">
                 Academic Publication • 7 Sections • Deep Benchmark Matrices & Full Citations
               </div>
+            </div>
+
+            <!-- Starting Context: Files, Folders, and Seed URLs -->
+            <div style="margin-top: 10px; padding: 10px 12px; background: rgba(0, 229, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+                <span style="font-size: 11px; font-weight: 700; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.6px; display: flex; align-items: center; gap: 4px;">
+                  📂 Starting Context (Optional Files, Folders, or Seed URLs):
+                </span>
+                <div style="display: flex; gap: 6px;">
+                  <button type="button" class="btn-upload" style="padding: 3px 8px; font-size: 11px;" onclick="pickResearchContext(false)">
+                    📎 Attach File(s)
+                  </button>
+                  <button type="button" class="btn-upload" style="padding: 3px 8px; font-size: 11px;" onclick="pickResearchContext(true)">
+                    📁 Attach Folder
+                  </button>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <input
+                  type="text"
+                  id="researchContextInput"
+                  placeholder="Paste seed URLs, file/folder paths, or specific directives (press Enter or click + to add)..."
+                  style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 5px; padding: 6px 10px; color: #fff; font-size: 12px; outline: none;"
+                  onkeydown="if(event.key==='Enter') addTypedResearchContext()"
+                />
+                <button type="button" class="btn-upload" style="padding: 6px 10px;" onclick="addTypedResearchContext()">+ Add</button>
+              </div>
+              <div id="researchContextChips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;"></div>
             </div>
           </div>
 
@@ -1453,10 +1506,77 @@
       badge.innerText = descriptions[val] || 'Selected research deliverable format';
     }
 
+    // Research Swarm Starting Context State & Management
+    let researchContextItems = [];
+
+    function pickResearchContext(folderMode) {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.pick_research_context) {
+        window.pywebview.api.pick_research_context(folderMode).then(res => {
+          if (res.status === 'ok' && res.paths) {
+            res.paths.forEach(p => addResearchContextItem(p));
+          }
+        }).catch(err => {
+          console.error("Failed to pick research context:", err);
+        });
+      } else {
+        const mockItem = folderMode ? '/Users/demo/research_papers' : '/Users/demo/whitepaper.pdf';
+        addResearchContextItem(mockItem);
+      }
+    }
+
+    function addTypedResearchContext() {
+      const input = document.getElementById('researchContextInput');
+      if (!input) return;
+      const text = input.value.trim();
+      if (!text) return;
+      if (text.includes(',') && !text.startsWith('http://') && !text.startsWith('https://')) {
+        text.split(',').forEach(p => {
+          if (p.trim()) addResearchContextItem(p.trim());
+        });
+      } else {
+        addResearchContextItem(text);
+      }
+      input.value = '';
+    }
+
+    function addResearchContextItem(item) {
+      if (!item || researchContextItems.includes(item)) return;
+      researchContextItems.push(item);
+      renderResearchContextChips();
+    }
+
+    function removeResearchContextItem(idx) {
+      researchContextItems.splice(idx, 1);
+      renderResearchContextChips();
+    }
+
+    function renderResearchContextChips() {
+      const container = document.getElementById('researchContextChips');
+      if (!container) return;
+      container.innerHTML = '';
+      researchContextItems.forEach((item, idx) => {
+        const isUrl = item.startsWith('http://') || item.startsWith('https://');
+        const icon = isUrl ? '🌐' : (item.endsWith('/') || !item.includes('.') ? '📁' : '📄');
+        const displayName = item.length > 35 ? item.slice(0, 16) + '...' + item.slice(-16) : item;
+
+        const chip = document.createElement('div');
+        chip.className = 'context-chip';
+        chip.title = item;
+        chip.innerHTML = `<span>${icon} ${displayName}</span><span class="chip-remove" onclick="removeResearchContextItem(${idx})">✕</span>`;
+        container.appendChild(chip);
+      });
+    }
+
     // Launch Research Swarm
     function launchResearchSwarm() {
       const topic = document.getElementById('researchTopicInput').value.trim();
       if (!topic) return;
+
+      // Ingest any uncommitted text in the context input
+      const ctxInput = document.getElementById('researchContextInput');
+      if (ctxInput && ctxInput.value.trim()) {
+        addTypedResearchContext();
+      }
 
       const formatSelect = document.getElementById('researchFormatSelect');
       const selectedFormat = formatSelect ? formatSelect.value : 'comprehensive';
@@ -1465,17 +1585,24 @@
       const urlsSelect = document.getElementById('researchUrlsSelect');
       const selectedUrls = urlsSelect ? parseInt(urlsSelect.value, 10) : 10;
 
+      const contextPayload = researchContextItems.length > 0 ? [...researchContextItems] : null;
+
       document.querySelectorAll('#gridResearchSwarm .worker-card').forEach(c => c.classList.remove('active'));
       document.getElementById('resProgressFill').style.width = '10%';
       document.getElementById('resProgressPct').innerText = '10%';
       document.getElementById('resProgressLabel').innerText = 'Phase 1: Research Architect initializing...';
       document.getElementById('swarmStatusBadge').innerText = 'Researching';
 
-      document.getElementById('swarmLogs').innerText = `[${new Date().toLocaleTimeString()}] Launching 5-Phase Research Swarm [Format: ${formatName} | Target: ≥${selectedUrls} Sources] for topic: '${topic}'...\n`;
+      let logContextInfo = "";
+      if (contextPayload && contextPayload.length > 0) {
+        logContextInfo = ` | Attached Context: ${contextPayload.length} item(s)`;
+      }
+
+      document.getElementById('swarmLogs').innerText = `[${new Date().toLocaleTimeString()}] Launching 5-Phase Research Swarm [Format: ${formatName} | Target: ≥${selectedUrls} Sources${logContextInfo}] for topic: '${topic}'...\n`;
       setBusy(true, 'Research Swarm');
 
       if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.run_research_swarm(topic, selectedFormat, selectedUrls);
+        window.pywebview.api.run_research_swarm(topic, selectedFormat, selectedUrls, contextPayload);
       }
     }
 

@@ -124,21 +124,14 @@ class GenesisDesktopApi:
                     "usage_pct": round(usage.usage_percentage, 1),
                 })
                 return {"status": "completed", "response": help_msg}
-            import re
-            format_choice = "comprehensive"
-            target_urls = 10
-            fmt_match = re.search(r'(?:--format|-f)\s+([a-zA-Z_-]+)', raw_arg, re.IGNORECASE)
-            if fmt_match:
-                format_choice = fmt_match.group(1).lower()
-                raw_arg = re.sub(r'(?:--format|-f)\s+[a-zA-Z_-]+', '', raw_arg).strip()
-
-            urls_match = re.search(r'(?:--urls|-u)\s+(\d+)', raw_arg, re.IGNORECASE)
-            if urls_match:
-                target_urls = int(urls_match.group(1))
-                raw_arg = re.sub(r'(?:--urls|-u)\s+\d+', '', raw_arg).strip()
-
-            topic_clean = raw_arg.strip()
-            return self.run_research_swarm(topic_clean, report_format=format_choice, target_urls=target_urls)
+            from genesis.core.research_swarm import extract_research_cli_flags
+            topic_clean, format_choice, target_urls, context_items = extract_research_cli_flags(raw_arg)
+            return self.run_research_swarm(
+                topic_clean,
+                report_format=format_choice,
+                target_urls=target_urls,
+                starting_context=context_items,
+            )
 
         if user_prompt.lower().startswith("/context") or user_prompt.upper() == "!CONTEXT":
             arg = user_prompt[len("/context"):].strip() if user_prompt.lower().startswith("/context") else ""
@@ -227,8 +220,14 @@ class GenesisDesktopApi:
         self._current_worker_thread.start()
         return {"status": "started", "goal": goal}
 
-    def run_research_swarm(self, topic: str, report_format: str = "comprehensive", target_urls: int = 10) -> Dict[str, Any]:
-        """Runs the 5-phase research swarm with chosen report format and emits live phase updates to the GUI."""
+    def run_research_swarm(
+        self,
+        topic: str,
+        report_format: str = "comprehensive",
+        target_urls: int = 10,
+        starting_context: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Runs the 5-phase research swarm with chosen report format and starting context, emitting live updates."""
         topic = topic.strip()
         if not topic:
             return {"status": "error", "message": "Research topic is empty"}
@@ -237,7 +236,12 @@ class GenesisDesktopApi:
             return {"status": "error", "message": "Agent is currently busy"}
 
         self._is_busy = True
-        self._emit("research_swarm_started", {"topic": topic, "report_format": report_format, "target_urls": target_urls})
+        self._emit("research_swarm_started", {
+            "topic": topic,
+            "report_format": report_format,
+            "target_urls": target_urls,
+            "has_starting_context": bool(starting_context),
+        })
 
         def _callback(phase_num, phase_id, label, details):
             self._emit("research_phase_update", {
@@ -252,7 +256,11 @@ class GenesisDesktopApi:
                 from genesis.core.research_swarm import ResearchSwarmCoordinator
                 coordinator = ResearchSwarmCoordinator(base_agent=self.agent)
                 dossier = coordinator.run_research_swarm(
-                    topic, report_format=report_format, target_urls=target_urls, on_event_callback=_callback
+                    topic,
+                    report_format=report_format,
+                    target_urls=target_urls,
+                    on_event_callback=_callback,
+                    starting_context=starting_context,
                 )
                 self._emit("research_swarm_completed", dossier)
             except Exception as e:
@@ -263,7 +271,13 @@ class GenesisDesktopApi:
 
         self._current_worker_thread = threading.Thread(target=_worker, daemon=True)
         self._current_worker_thread.start()
-        return {"status": "started", "topic": topic, "report_format": report_format, "target_urls": target_urls}
+        return {
+            "status": "started",
+            "topic": topic,
+            "report_format": report_format,
+            "target_urls": target_urls,
+            "has_starting_context": bool(starting_context),
+        }
 
 
     def run_pipeline(self, goal: str) -> Dict[str, Any]:
@@ -442,6 +456,20 @@ class GenesisDesktopApi:
                 "count": len(results),
             })
             return {"status": "ok", "results": results, "summary": combined_summary}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def pick_research_context(self, folder_mode: bool = False) -> Dict[str, Any]:
+        """Opens native macOS file/folder picker dialog for selecting research starting context."""
+        if not self.window:
+            return {"status": "error", "message": "Window reference not available"}
+        try:
+            import webview
+            dialog_type = webview.FOLDER_DIALOG if folder_mode else webview.OPEN_DIALOG
+            selected = self.window.create_file_dialog(dialog_type, allow_multiple=True)
+            if not selected:
+                return {"status": "cancelled", "message": "No file or folder selected"}
+            return {"status": "ok", "paths": list(selected)}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 

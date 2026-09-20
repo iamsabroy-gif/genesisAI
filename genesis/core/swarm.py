@@ -185,25 +185,20 @@ class SwarmCoordinator:
         )
 
         if is_deep_research:
+            from genesis.core.research_swarm import ResearchSwarmCoordinator, extract_research_cli_flags
             clean_topic = goal
-            format_choice = "comprehensive"
-            fmt_match = re.search(r'(?:--format|-f)\s+([a-zA-Z_-]+)', clean_topic, re.IGNORECASE)
-            if fmt_match:
-                format_choice = fmt_match.group(1).lower()
-                clean_topic = re.sub(r'(?:--format|-f)\s+[a-zA-Z_-]+', '', clean_topic).strip()
-
-            urls_match = re.search(r'(?:--urls|-u)\s+(\d+)', clean_topic, re.IGNORECASE)
-            target_urls = int(urls_match.group(1)) if urls_match else 10
-            if urls_match:
-                clean_topic = re.sub(r'(?:--urls|-u)\s+\d+', '', clean_topic).strip()
-
             for prefix in ["research:", "/research", "deep research"]:
                 if clean_topic.lower().startswith(prefix):
                     clean_topic = clean_topic[len(prefix):].strip()
                     break
-            from genesis.core.research_swarm import ResearchSwarmCoordinator
+            topic, format_choice, target_urls, context_items = extract_research_cli_flags(clean_topic)
             res_swarm = ResearchSwarmCoordinator(base_agent=self.agent)
-            return res_swarm.run_research_swarm(clean_topic or goal, report_format=format_choice, target_urls=target_urls)
+            return res_swarm.run_research_swarm(
+                topic or clean_topic or goal,
+                report_format=format_choice,
+                target_urls=target_urls,
+                starting_context=context_items,
+            )
 
         # Detect if goal is primarily an analytical report or documentation
         is_report_task = any(w in goal.lower() for w in ["report", "research", "analyze", "analysis", "summary", "document", "overview"])
@@ -426,11 +421,22 @@ class SwarmCoordinator:
                 target_verification_command,
             )
 
-    def run_research_swarm(self, topic: str, report_format: str = "comprehensive", target_urls: int = 10) -> Dict[str, Any]:
+    def run_research_swarm(
+        self,
+        topic: str,
+        report_format: str = "comprehensive",
+        target_urls: int = 10,
+        starting_context: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """Direct entrypoint to launch the 5-phase research swarm."""
         from genesis.core.research_swarm import ResearchSwarmCoordinator
         coordinator = ResearchSwarmCoordinator(base_agent=self.agent)
-        return coordinator.run_research_swarm(topic, report_format=report_format, target_urls=target_urls)
+        return coordinator.run_research_swarm(
+            topic,
+            report_format=report_format,
+            target_urls=target_urls,
+            starting_context=starting_context,
+        )
 
 
 

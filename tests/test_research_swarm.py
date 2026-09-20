@@ -254,3 +254,127 @@ def test_research_swarm_extracts_10_urls_and_saves_dossier():
             Path(dossier["raw_sources_file"]).unlink()
 
 
+def test_extract_research_cli_flags():
+    from genesis.core.research_swarm import extract_research_cli_flags
+
+    # Standard command
+    raw = '"Solid-State Battery" --format executive --urls 15 --context https://arxiv.org/abs/1234,./notes.md'
+    topic, fmt, urls, ctx = extract_research_cli_flags(raw)
+    assert topic == "Solid-State Battery"
+    assert fmt == "executive"
+    assert urls == 15
+    assert "https://arxiv.org/abs/1234" in ctx
+    assert "./notes.md" in ctx
+
+    # File, folder, and seed flags
+    raw2 = 'Quantum Cryptography --file ./whitepaper.pdf --folder ./docs --seed https://example.com'
+    topic2, fmt2, urls2, ctx2 = extract_research_cli_flags(raw2)
+    assert topic2 == "Quantum Cryptography"
+    assert fmt2 == "comprehensive"
+    assert urls2 == 10
+    assert "./whitepaper.pdf" in ctx2
+    assert "./docs" in ctx2
+    assert "https://example.com" in ctx2
+
+
+def test_ingest_research_starting_context(tmp_path: Path):
+    from genesis.core.research_swarm import ingest_research_starting_context
+
+    # 1. Test Seed URL
+    res_url = ingest_research_starting_context(["https://example.org/study"])
+    assert "https://example.org/study" in res_url["seed_urls"]
+    assert res_url["source_count"] == 1
+
+    # 2. Test Local File
+    doc_file = tmp_path / "quantum_spec.md"
+    doc_file.write_text(
+        "# Quantum Processor Spec 2026\n\n"
+        "Achieved 10,000 physical qubits operating at 15mK with 99.9% gate fidelity.\n"
+        "Fabricated on 300mm wafer with superconducting interconnects.",
+        encoding="utf-8",
+    )
+
+    res_file = ingest_research_starting_context([str(doc_file)])
+    assert len(res_file["local_files"]) == 1
+    assert res_file["local_files"][0]["name"] == "quantum_spec.md"
+    assert len(res_file["context_sources"]) == 1
+    assert "file://" in res_file["context_sources"][0]["url"]
+    assert res_file["context_sources"][0]["domain"] == "local-document"
+    assert "99.9%" in res_file["summary_for_architect"] or "Quantum Processor" in res_file["summary_for_architect"]
+
+    # 3. Test Folder Ingestion
+    docs_dir = tmp_path / "papers"
+    docs_dir.mkdir()
+    (docs_dir / "paper1.txt").write_text("Paper 1 findings with 400 TOPS throughput.", encoding="utf-8")
+    (docs_dir / "paper2.csv").write_text("metric,value\nefficiency,98%\n", encoding="utf-8")
+
+    res_dir = ingest_research_starting_context([str(docs_dir)])
+    assert len(res_dir["local_files"]) >= 2
+    assert res_dir["source_count"] >= 2
+
+
+def test_research_swarm_with_uploaded_starting_context(tmp_path: Path):
+    from genesis.core.research_swarm import ResearchSwarmCoordinator
+    import json
+
+    agent = GenesisAgent()
+
+    # Create user starting file
+    notes = tmp_path / "proprietary_lab_notes.md"
+    notes.write_text(
+        "# Proprietary Lithium Sulfur Lab Notes\n\n"
+        "Tested 500 charge cycles at 450 Wh/kg in September 2026.\n"
+        "Coulombic efficiency maintained above 99.8%.",
+        encoding="utf-8",
+    )
+
+    def _mock_turn(prompt):
+        if "Research Architect" in prompt or "Dr. Vance" in prompt:
+            return (
+                "## Research Charter\n"
+                "1. Hypothesis: Lab findings confirm feasibility.\n"
+                "2. Pillars: Sulfur cathodes, electrolyte degradation.\n"
+                "SEARCH_QUERY: lithium sulfur commercial deployment 2026\n"
+            )
+        elif "Senior Analyst" in prompt:
+            return "## Analysis\nComparative metrics: 450 Wh/kg vs 260 Wh/kg baseline."
+        elif "Red Team" in prompt:
+            return "## Audit\nCitations validated."
+        elif "Editor-in-Chief" in prompt:
+            return (
+                "# Comprehensive Research Report: Lithium Sulfur\n\n"
+                "## Executive Summary\nBreakthrough results confirmed...\n\n"
+                "## References\n- [1] file://" + str(notes.resolve()) + "\n- [2] https://example.com/battery_seed"
+            )
+        return "Generic turn"
+
+    with patch.object(agent, "run_turn", side_effect=_mock_turn), \
+         patch("genesis.core.research_swarm.web_search", return_value="- **URL**: `https://example.com/web_source`\n"), \
+         patch("genesis.core.research_swarm.web_scrape", return_value="# Web Source\nMarket size reached $12 billion in 2026."):
+
+        coord = ResearchSwarmCoordinator(base_agent=agent)
+        dossier = coord.run_research_swarm(
+            topic="Lithium Sulfur Commercialization",
+            report_format="comprehensive",
+            target_urls=10,
+            starting_context=[str(notes), "https://example.com/battery_seed"],
+        )
+
+        assert dossier["status"] == "GOAL_ACHIEVED"
+        assert dossier["starting_context"]["source_count"] == 2
+        assert "proprietary_lab_notes.md" in dossier["starting_context"]["local_files"]
+        assert "https://example.com/battery_seed" in dossier["starting_context"]["seed_urls"]
+
+        # Verify sources in dossier JSON include the uploaded file and seed URL
+        raw_json = json.loads(Path(dossier["raw_sources_file"]).read_text(encoding="utf-8"))
+        urls = [s["url"] for s in raw_json["sources"]]
+        assert any(str(notes.name) in u for u in urls)
+        assert any("https://example.com/battery_seed" in u for u in urls)
+
+        # Cleanup
+        if Path(dossier["report_path"]).exists():
+            Path(dossier["report_path"]).unlink()
+        if Path(dossier["raw_sources_file"]).exists():
+            Path(dossier["raw_sources_file"]).unlink()
+
+

@@ -152,26 +152,37 @@ genesis
 2. Enter your topic.
 3. Choose your **Report Format** (Comprehensive, Executive, Technical, Market, or Due Diligence).
 4. Select your **Extraction Target** (10, 15, or 20 verified sources).
-5. Click **Launch Research**.
+5. **(Optional) Attach Starting Context**:
+   - Click **`📎 Attach File(s)`** to select local PDFs, Markdown docs, code, or CSVs.
+   - Click **`📁 Attach Folder`** to select an entire directory of research documents.
+   - Or type/paste specific **seed URLs** (e.g. `https://arxiv.org/abs/...`), file paths, or directives directly into the input box.
+6. Click **Launch Research**.
 
 #### In the Terminal REPL:
 ```text
 # Run with defaults (Comprehensive format, 10 URLs)
 /research Solid-State Battery Commercialization 2026
 
-# Specify format and extract 15 verified URLs
-/research Quantum Computing Fault Tolerance -f technical --urls 15
+# Seed with a local PDF whitepaper and extract 15 verified URLs
+/research Quantum Computing Fault Tolerance -f technical --urls 15 --file ./quantum_paper.pdf
 
-# Executive briefing memo
-/research Autonomous Delivery Drones Market -f executive --urls 12
+# Seed with specific priority URLs and local lab notes
+/research Lithium-Sulfur Batteries -f technical --context https://arxiv.org/abs/2301.xxxx,./lab_notes.md
+
+# Executive briefing memo seeding an entire document folder
+/research Autonomous Delivery Drones Market -f executive --folder ./market_reports/
 ```
 
 #### Directly from the Command Line:
 ```bash
-genesis research "Next-Gen AI Accelerators" --format technical --urls 15
+# Attach file or folder context directly from bash
+genesis research "Next-Gen AI Accelerators" --format technical --urls 15 --file ./specs.pdf
+
+# Provide seed URLs and directories
+genesis research "Solid-State Batteries" --context https://arxiv.org/abs/1234,./notes_dir/
 ```
 
-The resulting deliverable is saved both as a Markdown document in your current directory and archived in `~/.genesis/research/`.
+The resulting deliverable is saved both as a Markdown document in your current directory and archived in `~/.genesis/research/`. Raw source dossiers with full citation metadata are archived in `~/.genesis/research/dossiers/`.
 
 ---
 
@@ -209,7 +220,7 @@ Genesis is calibrated for Apple Silicon Unified Memory:
 
 ## 🧪 Running the Test Suite
 
-Genesis includes 108 comprehensive automated tests:
+Genesis includes 115 comprehensive automated tests:
 
 ```bash
 # Run entire test suite

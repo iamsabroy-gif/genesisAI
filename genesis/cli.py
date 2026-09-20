@@ -352,29 +352,20 @@ def main():
             console.print("[red]Error: Please specify the research topic. E.g.: genesis research 'Solid-state batteries'[/red]")
             from genesis.core.research_swarm import format_report_formats_table
             console.print(format_report_formats_table())
-            console.print("\n[dim]Usage: genesis research <topic> [--format FORMAT][/dim]")
+            console.print("\n[dim]Usage: genesis research <topic> [--format FORMAT] [--urls 10-20] [--context URL/FILE/FOLDER] [--file PATH] [--folder PATH] [--seed URL][/dim]")
             return
 
         raw_str = " ".join(sub_args).strip()
-        import re
-        from genesis.core.research_swarm import ResearchSwarmCoordinator
-        format_choice = "comprehensive"
-        target_urls = 10
-
-        fmt_match = re.search(r'(?:--format|-f)\s+([a-zA-Z_-]+)', raw_str, re.IGNORECASE)
-        if fmt_match:
-            format_choice = fmt_match.group(1).lower()
-            raw_str = re.sub(r'(?:--format|-f)\s+[a-zA-Z_-]+', '', raw_str).strip()
-
-        urls_match = re.search(r'(?:--urls|-u)\s+(\d+)', raw_str, re.IGNORECASE)
-        if urls_match:
-            target_urls = int(urls_match.group(1))
-            raw_str = re.sub(r'(?:--urls|-u)\s+\d+', '', raw_str).strip()
-
-        topic = raw_str.strip()
+        from genesis.core.research_swarm import ResearchSwarmCoordinator, extract_research_cli_flags
+        topic, format_choice, target_urls, context_items = extract_research_cli_flags(raw_str)
 
         coordinator = ResearchSwarmCoordinator(base_agent=agent)
-        coordinator.run_research_swarm(topic, report_format=format_choice, target_urls=target_urls)
+        coordinator.run_research_swarm(
+            topic,
+            report_format=format_choice,
+            target_urls=target_urls,
+            starting_context=context_items,
+        )
         agent.close(user_feedback=1)
         return
 

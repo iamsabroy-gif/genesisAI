@@ -144,32 +144,18 @@ class GenesisTerminal:
                 elif task_cmd.strip().lower().startswith("/research"):
                     raw_args = task_cmd[len("/research"):].strip()
                     if not raw_args:
-                        console.print("[yellow]/research requires a topic. Example: /research Solid-state battery commercialization 2026 --urls 15[/yellow]")
+                        console.print("[yellow]/research requires a topic. Example: /research Solid-state battery commercialization 2026 --urls 15 --context ./paper.pdf[/yellow]")
                         from genesis.core.research_swarm import format_report_formats_table
                         console.print(format_report_formats_table())
-                        console.print("\n[dim]Usage: /research <topic> [--format <fmt>] [--urls 10-20][/dim]")
+                        console.print("\n[dim]Usage: /research <topic> [--format <fmt>] [--urls 10-20] [--context URL/FILE/FOLDER] [--file PATH] [--folder PATH] [--seed URL][/dim]")
                     else:
-                        import re
-                        from genesis.core.research_swarm import ResearchSwarmCoordinator
-                        format_choice = "comprehensive"
-                        target_urls = 10
-
-                        fmt_match = re.search(r'(?:--format|-f)\s+([a-zA-Z_-]+)', raw_args, re.IGNORECASE)
-                        if fmt_match:
-                            format_choice = fmt_match.group(1).lower()
-                            raw_args = re.sub(r'(?:--format|-f)\s+[a-zA-Z_-]+', '', raw_args).strip()
-
-                        urls_match = re.search(r'(?:--urls|-u)\s+(\d+)', raw_args, re.IGNORECASE)
-                        if urls_match:
-                            target_urls = int(urls_match.group(1))
-                            raw_args = re.sub(r'(?:--urls|-u)\s+\d+', '', raw_args).strip()
-
-                        topic = raw_args.strip()
+                        from genesis.core.research_swarm import ResearchSwarmCoordinator, extract_research_cli_flags
+                        topic, format_choice, target_urls, context_items = extract_research_cli_flags(raw_args)
 
                         coord = ResearchSwarmCoordinator(base_agent=self.agent)
                         loop = asyncio.get_running_loop()
                         self.current_task_future = loop.run_in_executor(
-                            None, coord.run_research_swarm, topic, format_choice, target_urls
+                            None, coord.run_research_swarm, topic, format_choice, target_urls, None, context_items
                         )
                         dossier = await self.current_task_future
                         console.print(f"\n[bold green]🔬 Research Swarm Complete:[/bold green] {dossier.get('summary')}")

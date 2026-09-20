@@ -17,7 +17,7 @@ import json
 import datetime
 import urllib.parse
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union, Tuple
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -280,6 +280,245 @@ def build_synthesized_intelligence_dossier(collected_sources: List[Dict[str, Any
     return "\n".join(lines)
 
 
+def extract_research_cli_flags(raw_str: str) -> Tuple[str, str, int, List[str]]:
+    """
+    Extracts --format, --urls, --context, --file, --folder, and --seed flags from research command string.
+    Returns:
+        (topic, format_choice, target_urls, context_items)
+    """
+    format_choice = "comprehensive"
+    target_urls = 10
+    context_items: List[str] = []
+
+    text = raw_str.strip()
+
+    # 1. Format flag
+    fmt_match = re.search(r'(?:--format|-f)\s+([a-zA-Z_-]+)', text, re.IGNORECASE)
+    if fmt_match:
+        format_choice = fmt_match.group(1).lower()
+        text = re.sub(r'(?:--format|-f)\s+[a-zA-Z_-]+', ' ', text).strip()
+
+    # 2. URLs count flag
+    urls_match = re.search(r'(?:--urls|-u)\s+(\d+)', text, re.IGNORECASE)
+    if urls_match:
+        target_urls = int(urls_match.group(1))
+        text = re.sub(r'(?:--urls|-u)\s+\d+', ' ', text).strip()
+
+    # 3. Context / File / Folder / Seed flags
+    flag_pattern = r'(?:--(?:file|folder|seed|context|-c))\s+(?:"([^"]+)"|\'([^\']+)\'|([^\s]+))'
+    for match in re.finditer(flag_pattern, text, re.IGNORECASE):
+        val = match.group(1) or match.group(2) or match.group(3)
+        if val:
+            # Handle comma-separated items within single flag
+            if "," in val and not (val.startswith("http://") or val.startswith("https://") and "," not in val.split("://")[1]):
+                context_items.extend([p.strip() for p in val.split(",") if p.strip()])
+            else:
+                context_items.append(val.strip())
+
+    text = re.sub(flag_pattern, ' ', text, flags=re.IGNORECASE).strip()
+
+    # Clean residual whitespace from topic
+    topic = re.sub(r'\s+', ' ', text).strip().strip("'\"")
+    return topic, format_choice, target_urls, context_items
+
+
+def ingest_research_starting_context(
+    context_input: Optional[Union[str, List[str], Dict[str, Any]]]
+) -> Dict[str, Any]:
+    """
+    Parses and ingests starting context for the Research Swarm:
+    - Identifies seed URLs (web addresses) for priority Phase 2 scraping
+    - Ingests local files (converting PDFs to Markdown, reading text/code/csv/json)
+    - Traverses local directories to discover and ingest research assets
+    - Formats starting brief/directives for Phase 1 (Architect)
+    - Produces compressed source dictionaries ready for Phase 2 (Intelligence)
+    """
+    payload: Dict[str, Any] = {
+        "raw_input": context_input,
+        "seed_urls": [],
+        "local_files": [],
+        "context_sources": [],
+        "summary_for_architect": "",
+        "source_count": 0,
+        "brief": "",
+    }
+
+    if not context_input:
+        return payload
+
+    if isinstance(context_input, dict) and "context_sources" in context_input:
+        return context_input
+
+    # Normalize into list of candidate tokens
+    items: List[str] = []
+    if isinstance(context_input, list):
+        for item in context_input:
+            if isinstance(item, str):
+                if "," in item and not (item.startswith("http://") or item.startswith("https://") and "," not in item.split("://")[1]):
+                    items.extend([p.strip() for p in item.split(",") if p.strip()])
+                else:
+                    if item.strip():
+                        items.append(item.strip())
+    elif isinstance(context_input, str):
+        raw = context_input.strip()
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        for line in lines:
+            if "," in line and not (line.startswith("http://") or line.startswith("https://")):
+                items.extend([p.strip() for p in line.split(",") if p.strip()])
+            else:
+                items.append(line)
+
+    from genesis.tools.uploader import clean_input_path
+    from genesis.tools.pdf_converter import convert_pdf_to_markdown
+    from genesis.tools.vault_rag import vault_index_file
+
+    seen_seeds = set()
+    seen_files = set()
+    brief_snippets: List[str] = []
+
+    def _process_single_file(p: Path, source_idx: int) -> Optional[Dict[str, Any]]:
+        resolved_str = str(p.resolve())
+        if resolved_str in seen_files:
+            return None
+        seen_files.add(resolved_str)
+
+        file_text = ""
+        file_title = p.name
+        is_pdf = p.suffix.lower() == ".pdf"
+
+        if is_pdf:
+            try:
+                res_msg = convert_pdf_to_markdown(str(p))
+                md_path_match = re.search(r"Markdown File:\s*`([^`]+)`", res_msg)
+                if md_path_match and Path(md_path_match.group(1)).exists():
+                    md_path = Path(md_path_match.group(1))
+                    file_text = md_path.read_text(encoding="utf-8", errors="replace")
+                else:
+                    alt_md = p.with_suffix(".md")
+                    if alt_md.exists():
+                        file_text = alt_md.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                console.print(f"  [yellow]⚠️ Could not convert PDF {p.name}: {e}[/yellow]")
+        else:
+            try:
+                raw_bytes = p.read_bytes()
+                for enc in ["utf-8", "latin-1"]:
+                    try:
+                        file_text = raw_bytes[:25000].decode(enc)
+                        break
+                    except Exception:
+                        continue
+            except Exception as e:
+                console.print(f"  [yellow]⚠️ Could not read file {p.name}: {e}[/yellow]")
+
+        if not file_text:
+            return None
+
+        first_h1 = re.search(r"^#\s+(.+)", file_text, re.MULTILINE)
+        if first_h1:
+            file_title = f"{first_h1.group(1).strip()} ({p.name})"
+
+        compressed = compress_source_findings(
+            source_idx=source_idx,
+            url=f"file://{p.resolve()}",
+            title=f"[Local Document] {file_title}",
+            query="User Uploaded Starting Context",
+            raw_text=file_text,
+        )
+        compressed["domain"] = "local-document"
+        compressed["local_path"] = str(p.resolve())
+
+        try:
+            vault_index_file(str(p))
+        except Exception:
+            pass
+
+        return compressed
+
+    for item in items:
+        # 1. URL check
+        if item.startswith("http://") or item.startswith("https://"):
+            clean_u = item.strip().rstrip(".,;")
+            if clean_u not in seen_seeds:
+                seen_seeds.add(clean_u)
+                payload["seed_urls"].append(clean_u)
+            continue
+
+        # 2. Local path check
+        try:
+            p = clean_input_path(item)
+            if p.exists():
+                if p.is_file():
+                    src = _process_single_file(p, len(payload["context_sources"]) + 1)
+                    if src:
+                        payload["context_sources"].append(src)
+                        payload["local_files"].append({
+                            "path": str(p.resolve()),
+                            "name": p.name,
+                            "size": p.stat().st_size,
+                            "type": "pdf" if p.suffix.lower() == ".pdf" else "document",
+                            "title": src["title"],
+                        })
+                    continue
+                elif p.is_dir():
+                    SUPPORTED_EXTS = {
+                        ".pdf", ".md", ".txt", ".csv", ".json", ".yaml", ".yml",
+                        ".py", ".html", ".rst", ".tsv", ".sql", ".sh",
+                    }
+                    found_count = 0
+                    for root, _, files in os.walk(p):
+                        for fname in sorted(files):
+                            if fname.startswith("."):
+                                continue
+                            fpath = Path(root) / fname
+                            if fpath.suffix.lower() in SUPPORTED_EXTS:
+                                src = _process_single_file(fpath, len(payload["context_sources"]) + 1)
+                                if src:
+                                    payload["context_sources"].append(src)
+                                    payload["local_files"].append({
+                                        "path": str(fpath.resolve()),
+                                        "name": fpath.name,
+                                        "size": fpath.stat().st_size,
+                                        "type": "pdf" if fpath.suffix.lower() == ".pdf" else "document",
+                                        "title": src["title"],
+                                    })
+                                    found_count += 1
+                                    if found_count >= 15:
+                                        break
+                        if found_count >= 15:
+                            break
+                    continue
+        except Exception:
+            pass
+
+        # 3. Text brief / notes
+        if len(item) > 10:
+            brief_snippets.append(item)
+
+    payload["brief"] = " ".join(brief_snippets).strip()
+    payload["source_count"] = len(payload["context_sources"]) + len(payload["seed_urls"])
+
+    # Digest for Phase 1 Architect
+    summary_lines = []
+    if payload["local_files"]:
+        summary_lines.append(f"• **Attached Local Documents & Files ({len(payload['local_files'])} items):**")
+        for f in payload["local_files"][:8]:
+            summary_lines.append(f"  - `{f['name']}`: {f['title']}")
+        if len(payload["local_files"]) > 8:
+            summary_lines.append(f"  - ... and {len(payload['local_files']) - 8} more files.")
+
+    if payload["seed_urls"]:
+        summary_lines.append(f"• **Prioritized Seed URLs ({len(payload['seed_urls'])} items):**")
+        for u in payload["seed_urls"]:
+            summary_lines.append(f"  - `{u}`")
+
+    if payload["brief"]:
+        summary_lines.append(f"• **User Directives & Brief:**\n  > {payload['brief']}")
+
+    payload["summary_for_architect"] = "\n".join(summary_lines)
+    return payload
+
+
 class ResearchWorkerPersona:
     """Specialized persona in the research swarm."""
     def __init__(self, name: str, title: str, system_directive: str):
@@ -359,12 +598,13 @@ class ResearchSwarmCoordinator:
         report_format: str = "comprehensive",
         target_urls: int = 10,
         on_event_callback: Optional[Any] = None,
+        starting_context: Optional[Union[str, List[str], Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Executes the 5-phase research swarm with chosen report format.
-        Targets extracting at least 10 (up to 20) verified URLs, compresses
-        and synthesizes findings to protect context window limits, and
-        permanently archives raw source dossiers to disk.
+        Supports user-provided starting context (seed URLs, files, folders, or notes),
+        extracts at least 10 (up to 20) verified sources, compresses and synthesizes findings
+        to protect context window limits, and permanently archives raw source dossiers to disk.
         """
         fmt = get_format_metadata(report_format)
         swarm_id = f"res_swarm_{int(time.time())}"
@@ -375,6 +615,9 @@ class ResearchSwarmCoordinator:
         report_filename = f"{slug}_{fmt['filename_suffix']}.md"
         workspace_file = WORKSPACE_ROOT / report_filename
         vault_file = RESEARCH_DIR / f"{slug}_{fmt['id']}_{int(time.time())}.md"
+
+        # 1. Parse & Ingest User Starting Context (URLs, Files, Folders, Briefs)
+        starting_data = ingest_research_starting_context(starting_context)
 
         dossier = {
             "swarm_id": swarm_id,
@@ -388,15 +631,34 @@ class ResearchSwarmCoordinator:
             "status": "IN_PROGRESS",
             "summary": "",
             "sources_count": 0,
+            "starting_context": {
+                "source_count": starting_data["source_count"],
+                "seed_urls": starting_data["seed_urls"],
+                "local_files": [f["name"] for f in starting_data["local_files"]],
+                "brief": starting_data["brief"],
+            },
         }
+
+        panel_lines = [
+            f"[bold cyan]Research Topic:[/bold cyan] [white]{topic}[/white]",
+            f"[bold yellow]Report Format:[/bold yellow] {fmt['icon']} [bold green]{fmt['name']}[/bold green] ([dim]{fmt['badge']}[/dim])",
+            f"[bold magenta]Extraction Target:[/bold magenta] ≥{target_url_count} Verified Sources (Multi-Source Synthesis & Compression)",
+        ]
+        if starting_data["source_count"] > 0:
+            parts = []
+            if starting_data["local_files"]:
+                parts.append(f"{len(starting_data['local_files'])} file(s)/folder(s)")
+            if starting_data["seed_urls"]:
+                parts.append(f"{len(starting_data['seed_urls'])} seed URL(s)")
+            panel_lines.append(f"[bold blue]Starting Context Attached:[/bold blue] {', '.join(parts)}")
+        panel_lines.extend([
+            "[dim]5-Phase Pipeline: Architect → Intelligence → Analyst → Auditor → Chief Editor[/dim]",
+            f"[dim]Deliverable target: {report_filename}[/dim]",
+        ])
 
         console.print(
             Panel(
-                f"[bold cyan]Research Topic:[/bold cyan] [white]{topic}[/white]\n"
-                f"[bold yellow]Report Format:[/bold yellow] {fmt['icon']} [bold green]{fmt['name']}[/bold green] ([dim]{fmt['badge']}[/dim])\n"
-                f"[bold magenta]Extraction Target:[/bold magenta] ≥{target_url_count} Verified URLs (Multi-Source Synthesis & Compression)\n"
-                f"[dim]5-Phase Pipeline: Architect → Intelligence → Analyst → Auditor → Chief Editor[/dim]\n"
-                f"[dim]Deliverable target: {report_filename}[/dim]",
+                "\n".join(panel_lines),
                 title="[bold white]🔬 Process-Oriented Research Swarm[/bold white]",
                 border_style="cyan",
             )
@@ -425,6 +687,14 @@ class ResearchSwarmCoordinator:
                 f"RESEARCH TOPIC: '{topic}'\n"
                 f"CHOSEN REPORT FORMAT: {fmt['name']} ({fmt['badge']})\n"
                 f"FORMAT OBJECTIVE: {fmt['architect_focus']}\n\n"
+            )
+            if starting_data["summary_for_architect"]:
+                architect_prompt += (
+                    f"### USER-ATTACHED STARTING CONTEXT & EVIDENCE BASE:\n"
+                    f"{starting_data['summary_for_architect']}\n\n"
+                    f"CHARTER INTEGRATION DIRECTIVE: Formulate the 6 Research Pillars to directly incorporate, evaluate, and expand upon the user's attached documents and seed URLs. Formulate search queries to specifically deep-dive, verify, or fill gaps around this starting context.\n\n"
+                )
+            architect_prompt += (
                 f"Generate a rigorous Research Charter tailored specifically for a '{fmt['name']}' with:\n"
                 f"1. Executive Problem Statement & Core Investigative Thesis\n"
                 f"2. 6 Mandatory Research Pillars aligned with {fmt['name']}\n"
@@ -460,11 +730,40 @@ class ResearchSwarmCoordinator:
             # PHASE 2: Multi-Angle Reconnaissance & Deep Intelligence Squad
             # =========================================================================
             _notify(2, "intelligence", "Phase 2: Multi-Angle Intelligence Gathering", f"Executing recon probes targeting at least {target_url_count} verified sources...")
-            console.print(f"\n[bold yellow]🔍 [Phase 2/5] Scout Alpha (Intelligence Squad) extracting empirical data (Target: ≥{target_url_count} URLs)...[/bold yellow]")
+            console.print(f"\n[bold yellow]🔍 [Phase 2/5] Scout Alpha (Intelligence Squad) extracting empirical data (Target: ≥{target_url_count} sources)...[/bold yellow]")
 
             collected_sources: List[Dict[str, Any]] = []
             seen_urls = set()
 
+            # Step 2A: Attach User's Uploaded Local Files / Folders as primary verified baseline sources
+            for ctx_src in starting_data["context_sources"]:
+                ctx_src["index"] = len(collected_sources) + 1
+                collected_sources.append(ctx_src)
+                seen_urls.add(ctx_src["url"])
+                console.print(f"  [dim]📎 Attached Starting Document [{len(collected_sources)}]: {ctx_src['title'][:55]} ({ctx_src['domain']})[/dim]")
+
+            # Step 2B: Scrape user-provided seed URLs with high priority
+            for seed_u in starting_data["seed_urls"]:
+                clean_u = seed_u.split("?")[0]
+                if clean_u in seen_urls:
+                    continue
+                seen_urls.add(clean_u)
+                console.print(f"  [dim]🌐 Scraping User Seed URL: {seed_u}[/dim]")
+                scraped = web_scrape(seed_u, max_chars=3500)
+                if "Web Scrape Error" not in scraped and len(scraped) > 50:
+                    title_match = re.search(r"^#\s+(.+)", scraped)
+                    page_title = title_match.group(1).strip() if title_match else urllib.parse.urlparse(seed_u).netloc
+                    compressed_item = compress_source_findings(
+                        source_idx=len(collected_sources) + 1,
+                        url=seed_u,
+                        title=f"[Seed URL] {page_title}",
+                        query="User Priority Seed URL",
+                        raw_text=scraped,
+                    )
+                    collected_sources.append(compressed_item)
+                    console.print(f"    [dim]✓ [{len(collected_sources)}] Extracted Seed: {page_title[:45]} ({compressed_item['domain']})[/dim]")
+
+            # Step 2C: Run web search probes for remaining target slots
             for q_idx, query in enumerate(queries_to_run, 1):
                 console.print(f"  [dim]• Probe {q_idx}/{len(queries_to_run)}: Searching '{query}'[/dim]")
                 search_res = web_search(query, max_results=6)
