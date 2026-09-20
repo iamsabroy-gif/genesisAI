@@ -1,0 +1,1816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Genesis AI — Native macOS Desktop</title>
+  <style>
+    :root {
+      --bg-main: #0d1117;
+      --bg-sidebar: rgba(22, 27, 34, 0.85);
+      --bg-card: #161b22;
+      --bg-input: #0d1117;
+      --border-color: #30363d;
+      --border-subtle: #21262d;
+      --text-primary: #f0f6fc;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --accent-cyan: #38bdf8;
+      --accent-blue: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-yellow: #d29922;
+      --accent-red: #f85149;
+      --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+      --font-mono: "SF Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: var(--font-stack);
+      background-color: var(--bg-main);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* macOS Window Header */
+    .titlebar {
+      height: 48px;
+      background: var(--bg-sidebar);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px 0 78px; /* space for traffic lights */
+      -webkit-app-region: drag;
+    }
+
+    .titlebar-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-silicon {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 12px;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      font-weight: 500;
+    }
+
+    .titlebar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      -webkit-app-region: no-drag;
+    }
+
+    .status-pill {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-green);
+    }
+    .status-dot.busy {
+      background: var(--accent-yellow);
+      animation: pulse 1.2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.15); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .btn-halt {
+      background: rgba(248, 81, 73, 0.15);
+      border: 1px solid rgba(248, 81, 73, 0.4);
+      color: var(--accent-red);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-halt:hover {
+      background: rgba(248, 81, 73, 0.3);
+      border-color: var(--accent-red);
+    }
+
+    /* Main Container */
+    .app-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 240px;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      backdrop-filter: blur(20px);
+    }
+
+    .nav-section {
+      padding: 14px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .nav-header {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      padding: 6px 10px;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      text-align: left;
+      width: 100%;
+      transition: all 0.15s ease;
+    }
+
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+    }
+
+    .nav-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+
+    /* System Telemetry in Sidebar Footer */
+    .sidebar-footer {
+      padding: 14px;
+      border-top: 1px solid var(--border-color);
+      background: rgba(13, 17, 23, 0.4);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .telemetry-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .telemetry-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .telemetry-bar-bg {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      overflow: hidden;
+    }
+
+    .telemetry-bar-fill {
+      height: 100%;
+      background: var(--accent-cyan);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Content Area */
+    .main-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-main);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .tab-content {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      overflow: hidden;
+      height: 100%;
+    }
+    .tab-content.active {
+      display: flex;
+    }
+
+    /* Chat View */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .msg-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 86%;
+    }
+
+    .msg-user {
+      align-self: flex-end;
+    }
+    .msg-user .msg-bubble {
+      background: #1f2937;
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: 14px 14px 2px 14px;
+      padding: 10px 15px;
+      font-size: 14px;
+      line-height: 1.45;
+      user-select: text;
+    }
+
+    .msg-assistant {
+      align-self: flex-start;
+    }
+    .msg-assistant .msg-header {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .msg-assistant .msg-bubble {
+      background: rgba(22, 27, 34, 0.6);
+      border: 1px solid var(--border-subtle);
+      color: var(--accent-cyan);
+      border-radius: 2px 14px 14px 14px;
+      padding: 12px 16px;
+      font-size: 13.5px;
+      line-height: 1.55;
+      font-family: var(--font-mono);
+      white-space: pre-wrap;
+      user-select: text;
+    }
+
+    /* Input Footer */
+    .input-box-container {
+      padding: 14px 20px 18px 20px;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-card);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .input-wrapper {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 8px 12px;
+      transition: border-color 0.15s ease;
+    }
+    .input-wrapper:focus-within {
+      border-color: var(--accent-cyan);
+    }
+
+    textarea.chat-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-family: var(--font-stack);
+      font-size: 13.5px;
+      resize: none;
+      outline: none;
+      max-height: 140px;
+      min-height: 22px;
+      line-height: 1.4;
+      user-select: text;
+    }
+
+    .btn-send {
+      background: var(--accent-cyan);
+      color: #0d1117;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-send:hover {
+      background: #7dd3fc;
+    }
+
+    /* Slash Command Autocomplete Menu */
+    .slash-menu {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 20px;
+      right: 20px;
+      max-height: 270px;
+      overflow-y: auto;
+      background: rgba(22, 27, 34, 0.96);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 6px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .slash-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .slash-item:hover, .slash-item.selected {
+      background: rgba(56, 189, 248, 0.15);
+    }
+    .slash-item-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .slash-cmd {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+    }
+    .slash-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .slash-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+    }
+
+    /* Upload Button and Dropdown */
+    .btn-upload {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn-upload:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text-primary);
+      border-color: var(--accent-cyan);
+    }
+
+    .upload-dropdown {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      padding: 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 170px;
+      z-index: 100;
+    }
+    .upload-item {
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      text-align: left;
+      padding: 8px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.12s ease;
+    }
+    .upload-item:hover {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-cyan);
+    }
+
+    /* Skills Cards in Skills Tab */
+    .skill-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.15s ease;
+    }
+    .skill-card:hover {
+      border-color: var(--accent-cyan);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    }
+
+    .shortcuts-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Swarm Studio View */
+    .swarm-view {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .swarm-header-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .swarm-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .worker-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .worker-card.active {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
+    }
+    .worker-title {
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .worker-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.35;
+    }
+    .worker-badge {
+      align-self: flex-start;
+      font-size: 9.5px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+    }
+
+    .log-box {
+      background: #090d13;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+      height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      user-select: text;
+    }
+
+    /* Master Controls Grid */
+    .master-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      padding: 24px;
+    }
+
+    .master-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .master-btn {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+    .master-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .master-btn.danger {
+      background: rgba(248, 81, 73, 0.15);
+      border-color: rgba(248, 81, 73, 0.4);
+      color: var(--accent-red);
+    }
+    .master-btn.danger:hover {
+      background: rgba(248, 81, 73, 0.3);
+    }
+
+    .master-log {
+      margin: 0 24px 24px 24px;
+      background: #090d13;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent-cyan);
+      height: 180px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      user-select: text;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- macOS Window Titlebar -->
+  <div class="titlebar">
+    <div class="titlebar-title">
+      <span>✨ Genesis AI</span>
+      <span class="badge-silicon">Apple Silicon Metal</span>
+      <span class="badge-silicon" id="activeModelBadge" style="color: var(--accent-green); border-color: rgba(63, 185, 80, 0.3); background: rgba(63, 185, 80, 0.1);">Model: Loading...</span>
+    </div>
+
+    <div class="titlebar-actions">
+      <div class="status-pill" id="statusPill">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Ready</span>
+      </div>
+      <button class="btn-halt" id="btnHalt" onclick="triggerHalt()">HALT</button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <div class="app-body">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="nav-section">
+        <div class="nav-header">Workspaces</div>
+        <button class="nav-btn active" onclick="switchTab('chatTab', this)">
+          <span>💬</span> Chat & REPL
+        </button>
+        <button class="nav-btn" onclick="switchTab('swarmTab', this)">
+          <span>🐝</span> Swarm Studio
+        </button>
+        <button class="nav-btn" onclick="switchTab('pipelineTab', this)">
+          <span>⚡</span> Fast Pipeline
+        </button>
+        <button class="nav-btn" onclick="switchTab('masterTab', this)">
+          <span>🛡️</span> Master Controls
+        </button>
+        <button class="nav-btn" onclick="switchTab('modelsTab', this); onOpenModelsTab();">
+          <span>🧠</span> Models & Servers
+        </button>
+        <button class="nav-btn" onclick="switchTab('skillsTab', this); onOpenSkillsTab();">
+          <span>⚡</span> Skills & Tools
+        </button>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="telemetry-item">
+          <div class="telemetry-header">
+            <span>Context Window</span>
+            <span id="tokensText">0 / 16,384</span>
+          </div>
+          <div class="telemetry-bar-bg">
+            <div class="telemetry-bar-fill" id="tokensFill"></div>
+          </div>
+        </div>
+
+        <div class="telemetry-item">
+          <div class="telemetry-header">
+            <span>RAM Health</span>
+            <span id="ramText">Healthy</span>
+          </div>
+          <div class="telemetry-bar-bg">
+            <div class="telemetry-bar-fill" id="ramFill" style="background: var(--accent-green); width: 85%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Tabs -->
+    <div class="main-view">
+      
+      <!-- 1. Chat Tab -->
+      <div class="tab-content active" id="chatTab">
+        <div class="chat-messages" id="chatMessages">
+          <div class="msg-row msg-assistant">
+            <div class="msg-header">✨ Genesis Sovereign Assistant</div>
+            <div class="msg-bubble">Ready for prompt input. Type regular instructions, type / for skills & commands, or use the Upload button.</div>
+          </div>
+        </div>
+
+        <div class="input-box-container" style="position: relative;">
+          <!-- Floating Slash Command Autocomplete Menu -->
+          <div id="slashAutocompleteMenu" class="slash-menu" style="display: none;"></div>
+
+          <div class="input-wrapper">
+            <!-- Upload Button & Dropdown -->
+            <div style="position: relative;">
+              <button type="button" class="btn-upload" id="btnUpload" onclick="toggleUploadDropdown()" title="Upload file(s) or entire folder">
+                <span>📁</span> Upload ▾
+              </button>
+              <div id="uploadDropdown" class="upload-dropdown" style="display: none;">
+                <button type="button" class="upload-item" onclick="triggerNativeUpload(false)">
+                  <span>📄</span> Upload File(s)...
+                </button>
+                <button type="button" class="upload-item" onclick="triggerNativeUpload(true)">
+                  <span>📁</span> Upload Folder...
+                </button>
+              </div>
+            </div>
+
+            <textarea
+              class="chat-input"
+              id="chatInput"
+              rows="1"
+              placeholder="Ask Genesis anything, type / for skills & commands, or upload files/folders..."
+              oninput="onChatInputChanged(this)"
+              onkeydown="handleInputKey(event)"
+            ></textarea>
+            <button class="btn-send" onclick="submitPrompt()">Send</button>
+          </div>
+          <div class="shortcuts-hint">
+            <span>Type <b>/</b> for commands & skills • Press <b>Enter</b> to send</span>
+            <span>Master Signals: <b>!HALT</b>, <b>!LOCK</b>, <b>!REVERT</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Swarm Studio Tab -->
+      <div class="tab-content" id="swarmTab">
+        <div class="swarm-view">
+          <!-- Swarm Mode Selector -->
+          <div style="display: flex; gap: 8px; margin-bottom: 2px;">
+            <button id="btnModeResearch" class="master-btn" style="flex: 1; border-color: var(--accent-cyan); background: rgba(56, 189, 248, 0.15); color: var(--accent-cyan);" onclick="setSwarmMode('research')">
+              🔬 5-Phase Deep Research Swarm (Publication-Grade)
+            </button>
+            <button id="btnModeCode" class="master-btn" style="flex: 1;" onclick="setSwarmMode('code')">
+              🐝 4-Agent Code & Systems Swarm
+            </button>
+          </div>
+
+          <!-- Research Swarm View Header -->
+          <div class="swarm-header-card" id="headerResearchSwarm">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <h3>🔬 Process-Oriented Research Swarm</h3>
+                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                  Executes a rigorous 5-phase academic & executive intelligence pipeline to author comprehensive Markdown reports.
+                </p>
+              </div>
+              <span class="badge-silicon" style="color: var(--accent-cyan);">Publication Standard</span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary);">
+                <span id="resProgressLabel">Ready to begin research</span>
+                <span id="resProgressPct">0%</span>
+              </div>
+              <div class="telemetry-bar-bg" style="height: 8px;">
+                <div class="telemetry-bar-fill" id="resProgressFill" style="width: 0%; background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));"></div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 6px;">
+              <input
+                type="text"
+                id="researchTopicInput"
+                placeholder="Enter detailed research topic (e.g. Solid-State Battery Commercialization: 2026 Landscape & Economics)..."
+                style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 13px; outline: none;"
+                onkeydown="if(event.key==='Enter') launchResearchSwarm()"
+              />
+              <button class="btn-send" style="padding: 8px 20px;" onclick="launchResearchSwarm()">Launch Research</button>
+            </div>
+
+            <!-- Report Format Options Selector -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding: 8px 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 6px; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11px; font-weight: 700; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.6px; display: flex; align-items: center; gap: 4px;">
+                  📑 Report Format:
+                </span>
+                <select id="researchFormatSelect" onchange="onResearchFormatChange()" style="background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 5px; padding: 5px 10px; color: #fff; font-size: 12px; font-weight: 500; outline: none; cursor: pointer;">
+                  <option value="comprehensive" selected>🔬 Comprehensive Academic Report (Default)</option>
+                  <option value="executive">👔 Executive Briefing & Decision Memo</option>
+                  <option value="technical">🛠️ Technical Architecture & System Spec</option>
+                  <option value="market">📈 Competitive Market & Industry Analysis</option>
+                  <option value="due_diligence">⚖️ Due Diligence & Go/No-Go Risk Audit</option>
+                </select>
+                <div style="display: flex; align-items: center; gap: 6px; margin-left: 8px;">
+                  <span style="font-size: 11px; font-weight: 700; color: #f06292; text-transform: uppercase; letter-spacing: 0.6px;">
+                    🌐 Sources:
+                  </span>
+                  <select id="researchUrlsSelect" style="background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 5px; padding: 5px 8px; color: #fff; font-size: 12px; font-weight: 500; outline: none; cursor: pointer;">
+                    <option value="10" selected>10 Verified URLs (Standard)</option>
+                    <option value="15">15 Verified URLs (Deep Recon)</option>
+                    <option value="20">20 Verified URLs (Exhaustive Synthesis)</option>
+                  </select>
+                </div>
+              </div>
+              <div id="formatDescriptionBadge" style="font-size: 11px; color: var(--text-secondary); background: rgba(0, 229, 255, 0.06); border: 1px solid rgba(0, 229, 255, 0.15); padding: 3px 8px; border-radius: 4px;">
+                Academic Publication • 7 Sections • Deep Benchmark Matrices & Full Citations
+              </div>
+            </div>
+          </div>
+
+          <!-- Research Swarm 5-Phase Cards Grid -->
+          <div class="swarm-grid" id="gridResearchSwarm" style="grid-template-columns: repeat(5, 1fr);">
+            <div class="worker-card" id="cardResArchitect">
+              <div class="worker-title">📐 Dr. Vance</div>
+              <div class="worker-badge">Phase 1</div>
+              <div class="worker-desc">Research Architect: Thesis, 6 Pillars & Search Strategy.</div>
+            </div>
+            <div class="worker-card" id="cardResIntel">
+              <div class="worker-title">🔍 Scout Alpha</div>
+              <div class="worker-badge">Phase 2</div>
+              <div class="worker-desc">Intelligence Recon: Targeted multi-source web & spec scraping.</div>
+            </div>
+            <div class="worker-card" id="cardResAnalyst">
+              <div class="worker-title">📊 Analyst Chen</div>
+              <div class="worker-badge">Phase 3</div>
+              <div class="worker-desc">Systems Modeler: Trade-off matrices, benchmark tables & SWOT.</div>
+            </div>
+            <div class="worker-card" id="cardResAuditor">
+              <div class="worker-title">🧐 Inspector Sterling</div>
+              <div class="worker-badge">Phase 4</div>
+              <div class="worker-desc">Red Team Auditor: Peer review, fact-checking & gap directives.</div>
+            </div>
+            <div class="worker-card" id="cardResEditor">
+              <div class="worker-title">🖋️ Chief Evelyn</div>
+              <div class="worker-badge">Phase 5</div>
+              <div class="worker-desc">Executive Editor: Authors full publication-ready Markdown report.</div>
+            </div>
+          </div>
+
+          <!-- Code Swarm View Header (Hidden by default) -->
+          <div class="swarm-header-card" id="headerCodeSwarm" style="display: none;">
+            <h3>🐝 Autonomous 4-Agent Code & Systems Swarm</h3>
+            <p style="font-size: 12px; color: var(--text-secondary);">
+              Runs an iterative loop until empirical tests or verification confirms the goal is 100% achieved.
+            </p>
+            <div style="display: flex; gap: 10px;">
+              <input
+                type="text"
+                id="swarmGoalInput"
+                placeholder="Enter overarching swarm goal (e.g. Implement OAuth2 and run all tests)..."
+                style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 13px; outline: none;"
+                onkeydown="if(event.key==='Enter') launchSwarm()"
+              />
+              <button class="btn-send" onclick="launchSwarm()">Launch Swarm</button>
+            </div>
+          </div>
+
+          <!-- Code Swarm 4-Worker Grid (Hidden by default) -->
+          <div class="swarm-grid" id="gridCodeSwarm" style="display: none;">
+            <div class="worker-card" id="workerResearcher">
+              <div class="worker-title">🔍 Researcher</div>
+              <div class="worker-desc">Reconnaissance, dependency scan & intelligence gathering.</div>
+              <div class="worker-badge">Idle</div>
+            </div>
+            <div class="worker-card" id="workerImplementer">
+              <div class="worker-title">🔨 Implementer</div>
+              <div class="worker-desc">Surgical file creation, patching & code authoring.</div>
+              <div class="worker-badge">Idle</div>
+            </div>
+            <div class="worker-card" id="workerTester">
+              <div class="worker-title">🧪 Tester</div>
+              <div class="worker-desc">Runs pytest, syntax checks, linters & captures exit codes.</div>
+              <div class="worker-badge">Idle</div>
+            </div>
+            <div class="worker-card" id="workerJudge">
+              <div class="worker-title">⚖️ Judge</div>
+              <div class="worker-desc">Evaluates empirical artifacts; issues completion verdict.</div>
+              <div class="worker-badge">Idle</div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h4 style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">
+                Swarm Execution Dossier & Live Stream
+              </h4>
+              <span id="swarmStatusBadge" style="font-size: 11px; color: var(--text-secondary);">Ready</span>
+            </div>
+            <div class="log-box" id="swarmLogs" style="height: 240px;">Ready to launch research swarm...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Pipeline Tab -->
+      <div class="tab-content" id="pipelineTab">
+        <div class="swarm-view">
+          <div class="swarm-header-card">
+            <h3>⚡ 3-Phase Hierarchical Pipeline</h3>
+            <p style="font-size: 12px; color: var(--text-secondary);">
+              Fast-track workflow decomposing goals into Recon → Architect → Implement.
+            </p>
+            <div style="display: flex; gap: 10px;">
+              <input
+                type="text"
+                id="pipelineGoalInput"
+                placeholder="Enter pipeline goal..."
+                style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 13px; outline: none;"
+                onkeydown="if(event.key==='Enter') launchPipeline()"
+              />
+              <button class="btn-send" onclick="launchPipeline()">Run Pipeline</button>
+            </div>
+          </div>
+          <div class="log-box" id="pipelineLogs" style="height: 380px;">Pipeline idle.</div>
+        </div>
+      </div>
+
+      <!-- 4. Master Controls Tab -->
+      <div class="tab-content" id="masterTab">
+        <div class="master-grid">
+          <div class="master-card">
+            <h4>!HALT Control</h4>
+            <p style="font-size: 11px; color: var(--text-secondary);">Hard interrupt current task & kill child subprocesses.</p>
+            <button class="master-btn danger" onclick="execSignal('!HALT')">Trigger !HALT</button>
+          </div>
+
+          <div class="master-card">
+            <h4>!LOCK / !UNLOCK</h4>
+            <p style="font-size: 11px; color: var(--text-secondary);">Engage read-only mode to prevent file edits.</p>
+            <div style="display: flex; gap: 8px;">
+              <button class="master-btn" style="flex: 1;" onclick="execSignal('!LOCK')">!LOCK</button>
+              <button class="master-btn" style="flex: 1;" onclick="execSignal('!UNLOCK')">!UNLOCK</button>
+            </div>
+          </div>
+
+          <div class="master-card">
+            <h4>!REVERT Rollback</h4>
+            <p style="font-size: 11px; color: var(--text-secondary);">Atomic rollback of working tree via git.</p>
+            <button class="master-btn" onclick="execSignal('!REVERT')">Run !REVERT</button>
+          </div>
+
+          <div class="master-card">
+            <h4>!KILL / !PURGE</h4>
+            <p style="font-size: 11px; color: var(--text-secondary);">Evict models from Unified RAM & wipe cache.</p>
+            <button class="master-btn danger" onclick="execSignal('!KILL')">Engage !KILL</button>
+          </div>
+        </div>
+
+        <div style="padding: 0 24px 8px 24px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">
+          Master Authorization Console
+        </div>
+        <div class="master-log" id="masterLog">Master protocol active. Valid master key verified.</div>
+      </div>
+
+      <!-- 5. Models & Servers Tab -->
+      <div class="tab-content" id="modelsTab">
+        <div class="swarm-view">
+          <div class="swarm-header-card">
+            <h3>🧠 Local & Server Model Engine</h3>
+            <p style="font-size: 12px; color: var(--text-secondary);">
+              Hot-switch between local Apple Silicon backends (Ollama, LM Studio, vLLM) and remote cloud servers (OpenAI, DeepSeek, Groq, OpenRouter, or Custom API).
+            </p>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+              <div>
+                <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Active Model:</span>
+                <span id="cfgActiveModel" style="font-size: 13px; font-weight: 700; color: var(--accent-cyan); margin-left: 6px;">Loading...</span>
+              </div>
+              <div>
+                <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Active Server:</span>
+                <span id="cfgActiveServer" style="font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary); margin-left: 6px;">Loading...</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; font-weight: 600;">
+              Quick Provider Presets
+            </h4>
+            <div id="presetsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px;">
+              <!-- Dynamically populated presets -->
+            </div>
+          </div>
+
+          <div class="swarm-header-card" style="margin-top: 6px;">
+            <h4 style="font-size: 12px; text-transform: uppercase; font-weight: 600; color: var(--text-muted);">
+              Server Connection & Model Settings
+            </h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Server Base URL</label>
+                <input
+                  type="text"
+                  id="inputBaseUrl"
+                  placeholder="http://localhost:11434/v1"
+                  style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; color: #fff; font-size: 12.5px; font-family: var(--font-mono); outline: none;"
+                />
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">API Key (optional for local servers)</label>
+                <input
+                  type="password"
+                  id="inputApiKey"
+                  placeholder="ollama / sk-..."
+                  style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; color: #fff; font-size: 12.5px; font-family: var(--font-mono); outline: none;"
+                />
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 4px;">
+              <button class="master-btn" style="flex: 1;" onclick="scanServerModels()">
+                🔍 Scan & List Available Models
+              </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px;">
+              <div>
+                <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Discovered Models on Server</label>
+                <select
+                  id="selectDiscoveredModels"
+                  onchange="onSelectModelDropdown(this)"
+                  style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; color: #fff; font-size: 12.5px; outline: none;"
+                >
+                  <option value="">(Click Scan & List to load models)</option>
+                </select>
+              </div>
+              <div>
+                <label style="display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Target Model Name / ID</label>
+                <input
+                  type="text"
+                  id="inputTargetModel"
+                  placeholder="e.g. qwen2.5-coder:7b or gpt-4o"
+                  style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; color: #fff; font-size: 12.5px; outline: none;"
+                />
+              </div>
+            </div>
+
+            <div style="margin-top: 6px; display: flex; justify-content: flex-end;">
+              <button class="btn-send" style="padding: 9px 24px; font-size: 13px;" onclick="applyModelSwitch()">
+                Activate & Save Model
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; font-weight: 600;">
+              Model Engine Status & Logs
+            </h4>
+            <div class="log-box" id="modelLogBox" style="height: 120px;">Model Manager Ready.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. Skills & Capabilities Tab -->
+      <div class="tab-content" id="skillsTab">
+        <div class="swarm-view">
+          <div class="swarm-header-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <h3>⚡ Sovereign Skills & Capability Engine</h3>
+                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                  Explore Genesis's built-in autonomous intelligence, multi-agent workflows, and native macOS tools.
+                </p>
+              </div>
+              <span class="badge-silicon" id="skillsCountBadge" style="color: var(--accent-cyan); border-color: rgba(56, 189, 248, 0.3);">15 Skills Active</span>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 6px;">
+              <input
+                type="text"
+                id="skillSearchInput"
+                placeholder="Search skills by name, command, or keywords (e.g. research, pdf, code, vault, upload)..."
+                style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 13px; outline: none;"
+                oninput="filterSkillsCards()"
+              />
+              <select
+                id="skillCategoryFilter"
+                style="background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none;"
+                onchange="filterSkillsCards()"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="Deep Research">Deep Research</option>
+                <option value="Engineering">Engineering</option>
+                <option value="Knowledge Base">Knowledge Base</option>
+                <option value="Autonomous Agents">Autonomous Agents</option>
+                <option value="Intelligence">Intelligence</option>
+                <option value="macOS Native">macOS Native</option>
+                <option value="System & Engine">System & Engine</option>
+                <option value="Self-Evolution">Self-Evolution</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Skills Cards Grid -->
+          <div id="skillsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;">
+            <!-- Dynamically rendered by JS -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Tab Switching
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    // Slash Commands Registry for Interactive Autocomplete
+    const SLASH_COMMANDS = [
+      { cmd: "/skills", desc: "Show all sovereign system capabilities & skills", icon: "⚡", cat: "Skills" },
+      { cmd: "/upload", desc: "Ingest and index files or entire folders into workspace & vault", icon: "📁", cat: "Upload" },
+      { cmd: "/help", desc: "Display full help guide and usage instructions", icon: "📖", cat: "General" },
+      { cmd: "/status", desc: "Inspect active model, RAM headroom, and system health", icon: "📊", cat: "Status" },
+      { cmd: "/models", desc: "List, switch, or configure local/server models", icon: "🧠", cat: "Models" },
+      { cmd: "/context", desc: "Display real-time token usage breakdown & visual gauge", icon: "🪟", cat: "Context" },
+      { cmd: "/research", desc: "Launch 5-phase research swarm (supports --format option)", icon: "🔬", cat: "Research" },
+      { cmd: "/research-formats", desc: "List available report formats (academic, executive, technical, market, diligence)", icon: "📑", cat: "Research" },
+      { cmd: "/swarm", desc: "Launch autonomous 4-worker swarm until goal is met", icon: "🐝", cat: "Swarm" },
+      { cmd: "/pipeline", desc: "Run fast 3-phase Recon → Architect → Implement workflow", icon: "⚡", cat: "Pipeline" },
+      { cmd: "/plan", desc: "Decompose goal into TaskDAG dependency graph with checkpoints", icon: "📋", cat: "Plan" },
+      { cmd: "/train", desc: "Harvest session trajectories and trigger local MLX LoRA training", icon: "🎓", cat: "Train" },
+      { cmd: "/queue", desc: "Inspect or clear the asynchronous task queue", icon: "📥", cat: "Queue" },
+      { cmd: "/clear", desc: "Clear the chat history screen", icon: "🧹", cat: "General" },
+      { cmd: "/halt", desc: "Stop current running task immediately (Ctrl+C)", icon: "🛑", cat: "Control" },
+    ];
+
+    let filteredSlashCommands = [];
+    let selectedSlashIndex = 0;
+
+    // Adjust textarea height & handle slash command trigger
+    const chatInput = document.getElementById('chatInput');
+    const slashMenu = document.getElementById('slashAutocompleteMenu');
+
+    chatInput.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 140) + 'px';
+      onChatInputChanged(this);
+    });
+
+    function onChatInputChanged(el) {
+      const val = el.value;
+      if (val.startsWith('/')) {
+        const query = val.slice(1).toLowerCase();
+        // If there's a space, only keep menu open if first token
+        const firstWord = val.split(' ')[0].toLowerCase();
+        filteredSlashCommands = SLASH_COMMANDS.filter(item => 
+          item.cmd.toLowerCase().startsWith(firstWord) || 
+          item.desc.toLowerCase().includes(query)
+        );
+
+        if (filteredSlashCommands.length > 0 && !val.includes(' ')) {
+          selectedSlashIndex = 0;
+          renderSlashMenu();
+          slashMenu.style.display = 'flex';
+          return;
+        }
+      }
+      slashMenu.style.display = 'none';
+    }
+
+    function renderSlashMenu() {
+      slashMenu.innerHTML = '';
+      filteredSlashCommands.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = `slash-item ${idx === selectedSlashIndex ? 'selected' : ''}`;
+        div.innerHTML = `
+          <div class="slash-item-left">
+            <span style="font-size: 15px;">${item.icon}</span>
+            <div>
+              <span class="slash-cmd">${item.cmd}</span>
+              <span class="slash-desc"> — ${item.desc}</span>
+            </div>
+          </div>
+          <span class="slash-badge">${item.cat}</span>
+        `;
+        div.onmousedown = (e) => {
+          e.preventDefault();
+          selectSlashCommand(item.cmd);
+        };
+        slashMenu.appendChild(div);
+      });
+    }
+
+    function selectSlashCommand(cmd) {
+      slashMenu.style.display = 'none';
+      if (cmd === '/upload') {
+        chatInput.value = '/upload ';
+        chatInput.focus();
+        toggleUploadDropdown(true);
+        return;
+      }
+      if (cmd === '/skills') {
+        // Direct jump to Skills tab or run /skills
+        switchTab('skillsTab', document.querySelectorAll('.nav-btn')[5] || document.querySelector('.nav-btn'));
+        onOpenSkillsTab();
+        return;
+      }
+      if (cmd === '/clear') {
+        document.getElementById('chatMessages').innerHTML = `
+          <div class="msg-row msg-assistant">
+            <div class="msg-header">✨ Genesis Sovereign Assistant</div>
+            <div class="msg-bubble">Chat cleared. Ready for your prompt.</div>
+          </div>
+        `;
+        chatInput.value = '';
+        return;
+      }
+      if (cmd === '/status' || cmd === '/context' || cmd === '/help') {
+        chatInput.value = cmd;
+        submitPrompt();
+        return;
+      }
+      if (cmd === '/research') {
+        chatInput.value = '/research ';
+        chatInput.focus();
+        return;
+      }
+      if (cmd === '/swarm') {
+        chatInput.value = '/swarm ';
+        chatInput.focus();
+        return;
+      }
+      if (cmd === '/pipeline') {
+        chatInput.value = '/pipeline ';
+        chatInput.focus();
+        return;
+      }
+      if (cmd === '/plan') {
+        chatInput.value = '/plan ';
+        chatInput.focus();
+        return;
+      }
+      if (cmd === '/models') {
+        switchTab('modelsTab', document.querySelectorAll('.nav-btn')[4]);
+        onOpenModelsTab();
+        return;
+      }
+      chatInput.value = cmd + ' ';
+      chatInput.focus();
+    }
+
+    function handleInputKey(e) {
+      if (slashMenu.style.display === 'flex' && filteredSlashCommands.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          selectedSlashIndex = (selectedSlashIndex + 1) % filteredSlashCommands.length;
+          renderSlashMenu();
+          return;
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          selectedSlashIndex = (selectedSlashIndex - 1 + filteredSlashCommands.length) % filteredSlashCommands.length;
+          renderSlashMenu();
+          return;
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          selectSlashCommand(filteredSlashCommands[selectedSlashIndex].cmd);
+          return;
+        } else if (e.key === 'Escape') {
+          slashMenu.style.display = 'none';
+          return;
+        }
+      }
+
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitPrompt();
+      }
+    }
+
+    // Upload Dropdown
+    function toggleUploadDropdown(forceOpen) {
+      const dropdown = document.getElementById('uploadDropdown');
+      if (forceOpen !== undefined) {
+        dropdown.style.display = forceOpen ? 'flex' : 'none';
+      } else {
+        dropdown.style.display = (dropdown.style.display === 'flex') ? 'none' : 'flex';
+      }
+    }
+
+    // Close upload dropdown on clicking elsewhere
+    document.addEventListener('click', (e) => {
+      const btn = document.getElementById('btnUpload');
+      const dd = document.getElementById('uploadDropdown');
+      if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) {
+        dd.style.display = 'none';
+      }
+      if (slashMenu && !chatInput.contains(e.target) && !slashMenu.contains(e.target)) {
+        slashMenu.style.display = 'none';
+      }
+    });
+
+    function triggerNativeUpload(folderMode) {
+      toggleUploadDropdown(false);
+      setBusy(true, folderMode ? 'Ingesting Folder' : 'Ingesting Files');
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.open_file_dialog(folderMode).then(res => {
+          setBusy(false);
+          if (res.status === 'ok') {
+            appendMessage('assistant', `📁 Ingestion Complete:\n${res.summary}`);
+          } else if (res.status === 'cancelled') {
+            // User cancelled picker dialog
+          } else {
+            appendMessage('assistant', `❌ Upload Error: ${res.message}`);
+          }
+        }).catch(err => {
+          setBusy(false);
+          appendMessage('assistant', `❌ Upload Failed: ${err}`);
+        });
+      } else {
+        // Fallback demo mock if opened directly in browser
+        setTimeout(() => {
+          appendMessage('assistant', `[Mock Browser Preview]: Native macOS ${folderMode ? 'Folder' : 'File'} Picker triggered.`);
+          setBusy(false);
+        }, 600);
+      }
+    }
+
+    // Submit Prompt to Python API
+    function submitPrompt() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+
+      appendMessage('user', text);
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+
+      setBusy(true);
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.send_prompt(text);
+      } else {
+        // Fallback demo mock if opened directly in browser
+        setTimeout(() => {
+          appendMessage('assistant', "Genesis (Mock Preview): Ready in native macOS WebKit.");
+          setBusy(false);
+        }, 800);
+      }
+    }
+
+    function appendMessage(role, text) {
+      const chatContainer = document.getElementById('chatMessages');
+      const row = document.createElement('div');
+      row.className = `msg-row msg-${role}`;
+
+      if (role === 'assistant') {
+        const header = document.createElement('div');
+        header.className = 'msg-header';
+        header.innerText = '✨ Genesis';
+        row.appendChild(header);
+      }
+
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      bubble.innerText = text;
+      row.appendChild(bubble);
+
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function setBusy(busy, label) {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      if (busy) {
+        dot.className = 'status-dot busy';
+        text.innerText = label || 'Busy';
+      } else {
+        dot.className = 'status-dot';
+        text.innerText = 'Ready';
+      }
+    }
+
+    // Trigger HALT
+    function triggerHalt() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.halt();
+      }
+    }
+
+    // Master Signals
+    function execSignal(sig) {
+      const logBox = document.getElementById('masterLog');
+      logBox.innerText += `\n> Executing: ${sig}...`;
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.execute_master_signal(sig).then(res => {
+          logBox.innerText += `\n${res.output || JSON.stringify(res)}`;
+          logBox.scrollTop = logBox.scrollHeight;
+        });
+      }
+    }
+
+    // Swarm Mode Switcher
+    function setSwarmMode(mode) {
+      const btnRes = document.getElementById('btnModeResearch');
+      const btnCode = document.getElementById('btnModeCode');
+      const headRes = document.getElementById('headerResearchSwarm');
+      const gridRes = document.getElementById('gridResearchSwarm');
+      const headCode = document.getElementById('headerCodeSwarm');
+      const gridCode = document.getElementById('gridCodeSwarm');
+
+      if (mode === 'research') {
+        btnRes.style.borderColor = 'var(--accent-cyan)';
+        btnRes.style.background = 'rgba(56, 189, 248, 0.15)';
+        btnRes.style.color = 'var(--accent-cyan)';
+        btnCode.style.borderColor = 'var(--border-color)';
+        btnCode.style.background = 'rgba(255, 255, 255, 0.05)';
+        btnCode.style.color = 'var(--text-primary)';
+        headRes.style.display = 'block';
+        gridRes.style.display = 'grid';
+        headCode.style.display = 'none';
+        gridCode.style.display = 'none';
+      } else {
+        btnCode.style.borderColor = 'var(--accent-cyan)';
+        btnCode.style.background = 'rgba(56, 189, 248, 0.15)';
+        btnCode.style.color = 'var(--accent-cyan)';
+        btnRes.style.borderColor = 'var(--border-color)';
+        btnRes.style.background = 'rgba(255, 255, 255, 0.05)';
+        btnRes.style.color = 'var(--text-primary)';
+        headRes.style.display = 'none';
+        gridRes.style.display = 'none';
+        headCode.style.display = 'block';
+        gridCode.style.display = 'grid';
+      }
+    }
+
+    // Handle Research Report Format dropdown change
+    function onResearchFormatChange() {
+      const sel = document.getElementById('researchFormatSelect');
+      const badge = document.getElementById('formatDescriptionBadge');
+      if (!sel || !badge) return;
+      const val = sel.value;
+      const descriptions = {
+        'comprehensive': 'Academic Publication • 7 Sections • Deep Benchmark Matrices & Full Citations',
+        'executive': 'C-Level Briefing • 7 Sections • Executive Dashboard, KPI Tables & 90-Day Roadmap',
+        'technical': 'Engineering Deep Dive • 7 Sections • System Architecture, Scalability & Failure Modes',
+        'market': 'Market Intelligence • 7 Sections • Competitor Feature Matrix, Sizing & Disruption',
+        'due_diligence': 'Risk & Diligence Audit • 7 Sections • Go/No-Go Verdict, Red Flags & Risk Heatmap'
+      };
+      badge.innerText = descriptions[val] || 'Selected research deliverable format';
+    }
+
+    // Launch Research Swarm
+    function launchResearchSwarm() {
+      const topic = document.getElementById('researchTopicInput').value.trim();
+      if (!topic) return;
+
+      const formatSelect = document.getElementById('researchFormatSelect');
+      const selectedFormat = formatSelect ? formatSelect.value : 'comprehensive';
+      const formatName = formatSelect ? formatSelect.options[formatSelect.selectedIndex].text : 'Comprehensive Academic Report';
+
+      const urlsSelect = document.getElementById('researchUrlsSelect');
+      const selectedUrls = urlsSelect ? parseInt(urlsSelect.value, 10) : 10;
+
+      document.querySelectorAll('#gridResearchSwarm .worker-card').forEach(c => c.classList.remove('active'));
+      document.getElementById('resProgressFill').style.width = '10%';
+      document.getElementById('resProgressPct').innerText = '10%';
+      document.getElementById('resProgressLabel').innerText = 'Phase 1: Research Architect initializing...';
+      document.getElementById('swarmStatusBadge').innerText = 'Researching';
+
+      document.getElementById('swarmLogs').innerText = `[${new Date().toLocaleTimeString()}] Launching 5-Phase Research Swarm [Format: ${formatName} | Target: ≥${selectedUrls} Sources] for topic: '${topic}'...\n`;
+      setBusy(true, 'Research Swarm');
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.run_research_swarm(topic, selectedFormat, selectedUrls);
+      }
+    }
+
+    // Code Swarm
+    function launchSwarm() {
+      const goal = document.getElementById('swarmGoalInput').value.trim();
+      if (!goal) return;
+      document.getElementById('swarmLogs').innerText = `Launching autonomous swarm for goal: '${goal}'...\n`;
+      setBusy(true, 'Swarming');
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.run_swarm(goal);
+      }
+    }
+
+    // Pipeline
+    function launchPipeline() {
+      const goal = document.getElementById('pipelineGoalInput').value.trim();
+      if (!goal) return;
+      document.getElementById('pipelineLogs').innerText = `Running 3-phase pipeline: '${goal}'...\n`;
+      setBusy(true, 'Pipeline');
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.run_pipeline(goal);
+      }
+    }
+
+    // Python -> JS Event Dispatcher
+    window.onGenesisEvent = function(payload) {
+      const evt = payload.event;
+      const d = payload.data;
+
+      if (evt === 'task_started') {
+        setBusy(true, 'Thinking');
+      } else if (evt === 'task_completed') {
+        appendMessage('assistant', d.response);
+        updateTelemetry(d.used_tokens, d.usage_pct);
+        setBusy(false);
+      } else if (evt === 'task_error') {
+        appendMessage('assistant', `Error: ${d.error}`);
+        setBusy(false);
+      } else if (evt === 'research_phase_update') {
+        const cardMap = {
+          1: 'cardResArchitect',
+          2: 'cardResIntel',
+          3: 'cardResAnalyst',
+          4: 'cardResAuditor',
+          5: 'cardResEditor'
+        };
+        document.querySelectorAll('#gridResearchSwarm .worker-card').forEach(c => c.classList.remove('active'));
+        const activeCard = document.getElementById(cardMap[d.phase_num]);
+        if (activeCard) activeCard.classList.add('active');
+
+        const pct = (d.phase_num * 20);
+        document.getElementById('resProgressFill').style.width = pct + '%';
+        document.getElementById('resProgressPct').innerText = pct + '%';
+        document.getElementById('resProgressLabel').innerText = d.label;
+        document.getElementById('swarmStatusBadge').innerText = d.label;
+
+        const logBox = document.getElementById('swarmLogs');
+        logBox.innerText += `\n[${new Date().toLocaleTimeString()}] ${d.label}: ${d.details}`;
+        logBox.scrollTop = logBox.scrollHeight;
+
+      } else if (evt === 'research_swarm_completed') {
+        document.getElementById('resProgressFill').style.width = '100%';
+        document.getElementById('resProgressPct').innerText = '100%';
+        document.getElementById('resProgressLabel').innerText = 'Research Complete!';
+        document.getElementById('swarmStatusBadge').innerText = 'Completed';
+        document.querySelectorAll('#gridResearchSwarm .worker-card').forEach(c => c.classList.remove('active'));
+
+        const logBox = document.getElementById('swarmLogs');
+        logBox.innerText += `\n\n🎯 Research Report Finalized (${d.word_count || 0} words)!`;
+        logBox.innerText += `\n📄 Workspace File: ${d.report_path}`;
+        logBox.innerText += `\n🏛️ Vault Archive: ${d.vault_path}\n`;
+        logBox.scrollTop = logBox.scrollHeight;
+
+        appendMessage('assistant', `[Research Swarm Complete: Finalized report saved to ${d.report_path} (${d.word_count || 0} words)]`);
+        setBusy(false);
+
+      } else if (evt === 'research_swarm_error') {
+        document.getElementById('swarmLogs').innerText += `\n[Error in Research Swarm]: ${d.error}`;
+        setBusy(false);
+
+      } else if (evt === 'swarm_completed') {
+        document.getElementById('swarmLogs').innerText += `\n✨ Swarm Completed:\n` + JSON.stringify(d, null, 2);
+        setBusy(false);
+      } else if (evt === 'pipeline_completed') {
+        document.getElementById('pipelineLogs').innerText += `\n✅ Pipeline Result:\n${d.result}`;
+        setBusy(false);
+      } else if (evt === 'halted') {
+        appendMessage('assistant', `[Task halted by Master Override]`);
+        setBusy(false);
+      } else if (evt === 'idle') {
+        setBusy(false);
+      }
+    };
+
+    function updateTelemetry(usedTokens, usagePct) {
+      if (usedTokens !== undefined) {
+        document.getElementById('tokensText').innerText = `${usedTokens.toLocaleString()} / 16,384`;
+        document.getElementById('tokensFill').style.width = Math.min(usagePct, 100) + '%';
+      }
+    }
+
+    // Model Management
+    let currentPresets = [];
+    let currentProvider = 'ollama';
+
+    function onOpenModelsTab() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_model_config().then(cfg => {
+          renderModelConfig(cfg);
+        });
+      }
+    }
+
+    function renderModelConfig(cfg) {
+      document.getElementById('cfgActiveModel').innerText = cfg.current_model || 'Unknown';
+      document.getElementById('cfgActiveServer').innerText = cfg.current_base_url || 'Unknown';
+      document.getElementById('activeModelBadge').innerText = `Model: ${cfg.current_model}`;
+      document.getElementById('inputBaseUrl').value = cfg.current_base_url || '';
+      document.getElementById('inputTargetModel').value = cfg.current_model || '';
+
+      currentPresets = cfg.presets || [];
+      currentProvider = cfg.current_provider || 'custom';
+
+      const container = document.getElementById('presetsContainer');
+      container.innerHTML = '';
+
+      currentPresets.forEach(p => {
+        const card = document.createElement('div');
+        const isActive = (p.id === currentProvider);
+        card.style.cssText = `
+          background: ${isActive ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-card)'};
+          border: 1px solid ${isActive ? 'var(--accent-cyan)' : 'var(--border-color)'};
+          border-radius: 8px;
+          padding: 10px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        `;
+        card.innerHTML = `
+          <div style="font-size: 11.5px; font-weight: 700; color: #fff; margin-bottom: 3px;">${p.name}</div>
+          <div style="font-size: 10px; font-family: var(--font-mono); color: var(--text-muted);">${p.base_url}</div>
+          <div style="font-size: 10px; color: var(--accent-cyan); margin-top: 4px;">Default: ${p.default_model}</div>
+        `;
+        card.onclick = () => selectPreset(p);
+        container.appendChild(card);
+      });
+    }
+
+    function selectPreset(preset) {
+      currentProvider = preset.id;
+      document.getElementById('inputBaseUrl').value = preset.base_url;
+      document.getElementById('inputTargetModel').value = preset.default_model;
+      if (preset.effective_key) {
+        document.getElementById('inputApiKey').value = preset.effective_key;
+      }
+      logModel(`Selected preset: ${preset.name}. Click 'Scan' to verify models or 'Activate' to switch.`);
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_model_config().then(cfg => {
+          cfg.current_provider = preset.id;
+          renderModelConfig(cfg);
+        });
+      }
+    }
+
+    function scanServerModels() {
+      const url = document.getElementById('inputBaseUrl').value.trim();
+      const key = document.getElementById('inputApiKey').value.trim();
+      if (!url) return;
+
+      logModel(`Scanning server at ${url}...`);
+      const select = document.getElementById('selectDiscoveredModels');
+      select.innerHTML = '<option value="">Scanning server...</option>';
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.fetch_server_models(url, key).then(res => {
+          if (res.status === 'ok' && res.models && res.models.length > 0) {
+            select.innerHTML = '<option value="">-- Select a model from server --</option>';
+            res.models.forEach(m => {
+              const opt = document.createElement('option');
+              opt.value = m;
+              opt.innerText = m;
+              select.appendChild(opt);
+            });
+            logModel(`Found ${res.models.length} model(s) on ${url}:\n` + res.models.slice(0, 8).join(', ') + (res.models.length > 8 ? '...' : ''));
+          } else {
+            select.innerHTML = '<option value="">(No models returned by server)</option>';
+            logModel(`Notice: ${res.message || 'Server did not return a model catalog. You can type the model ID manually.'}`);
+          }
+        });
+      }
+    }
+
+    function onSelectModelDropdown(sel) {
+      if (sel.value) {
+        document.getElementById('inputTargetModel').value = sel.value;
+      }
+    }
+
+    function applyModelSwitch() {
+      const model = document.getElementById('inputTargetModel').value.trim();
+      const url = document.getElementById('inputBaseUrl').value.trim();
+      const key = document.getElementById('inputApiKey').value.trim();
+
+      if (!model) {
+        logModel("Error: Target Model Name cannot be empty.");
+        return;
+      }
+
+      logModel(`Switching agent to model '${model}' at ${url}...`);
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.switch_model(model, url, key, currentProvider).then(res => {
+          logModel(`Success: ${res.message}`);
+          document.getElementById('cfgActiveModel').innerText = res.model;
+          document.getElementById('cfgActiveServer').innerText = res.base_url;
+          document.getElementById('activeModelBadge').innerText = `Model: ${res.model}`;
+          appendMessage('assistant', `[Switched model engine to '${res.model}' on ${res.base_url}]`);
+        }).catch(err => {
+          logModel(`Error: ${err}`);
+        });
+      }
+    }
+
+    function logModel(msg) {
+      const box = document.getElementById('modelLogBox');
+      box.innerText += `\n[${new Date().toLocaleTimeString()}] ${msg}`;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    // Skills Catalog Management
+    let loadedSkills = [];
+
+    function onOpenSkillsTab() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_skills().then(skills => {
+          loadedSkills = skills || [];
+          renderSkillsCards(loadedSkills);
+        });
+      } else {
+        // Default preview skills when opened in standalone browser
+        loadedSkills = [
+          { id: "research_swarm", name: "5-Phase Research Swarm", command: "/research <topic>", category: "Deep Research", icon: "🔬", description: "Rigorous 5-phase research pipeline producing publication-grade Markdown reports." },
+          { id: "web_research", name: "Autonomous Web Intelligence", command: "web search / research", category: "Deep Research", icon: "🌐", description: "Zero-API-key DuckDuckGo search, semantic HTML scraping, and multi-source dossier authoring." },
+          { id: "code_engineering", name: "Code Engineering & Verification", command: "genesis <prompt> / /pipeline", category: "Engineering", icon: "⚡", description: "File inspection, surgical snippet patching, syntax checks, and pytest self-verification." },
+          { id: "file_upload", name: "Multi-File & Folder Ingestion", command: "/upload <path>", category: "Knowledge Base", icon: "📁", description: "Batch ingests individual files or entire directory trees, converts PDFs to Markdown, and indexes into Vector Vault." },
+          { id: "vector_vault", name: "Sovereign Vector Vault (Local RAG)", command: "genesis vault / vault_search", category: "Knowledge Base", icon: "🏛️", description: "Local TF-IDF vector database for semantic retrieval without cloud embeddings." },
+          { id: "pdf_pipeline", name: "PDF to Markdown Structural Parser", command: "genesis pdf <file.pdf>", category: "Knowledge Base", icon: "📄", description: "Converts PDF documents into structured Markdown representations." },
+          { id: "swarm_coordinator", name: "Empirical 4-Agent Code Swarm", command: "/swarm <goal>", category: "Autonomous Agents", icon: "🐝", description: "Iterative multi-agent loop with empirical tests and completion verdicts." },
+          { id: "task_dag", name: "TaskDAG Goal Planner", command: "/plan <goal>", category: "Autonomous Agents", icon: "📋", description: "Decomposes goals into dependency graphs with step-by-step checkpoints." },
+          { id: "model_manager", name: "Multi-Backend Model Switcher", command: "/models / /model", category: "System & Engine", icon: "🧠", description: "Hot-swaps between Ollama, LM Studio, vLLM, and cloud API endpoints." },
+        ];
+        renderSkillsCards(loadedSkills);
+      }
+    }
+
+    function renderSkillsCards(skills) {
+      const grid = document.getElementById('skillsGrid');
+      grid.innerHTML = '';
+      document.getElementById('skillsCountBadge').innerText = `${skills.length} Skills Available`;
+
+      if (skills.length === 0) {
+        grid.innerHTML = '<div style="color: var(--text-muted); font-size: 13px; grid-column: 1/-1; padding: 20px;">No skills match your search.</div>';
+        return;
+      }
+
+      skills.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'skill-card';
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 20px;">${s.icon || '⚡'}</span>
+              <div style="font-size: 13px; font-weight: 700; color: #fff;">${s.name}</div>
+            </div>
+            <span class="badge-silicon" style="font-size: 9.5px;">${s.category}</span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.45; flex: 1;">
+            ${s.description}
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
+            <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); background: rgba(56, 189, 248, 0.08); padding: 2px 6px; border-radius: 4px;">
+              ${s.command}
+            </code>
+            <button class="master-btn" style="padding: 4px 10px; font-size: 11px;" onclick="useSkill('${s.command.replace(/'/g, "\\'")}')">
+              Use Skill
+            </button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function filterSkillsCards() {
+      const query = document.getElementById('skillSearchInput').value.toLowerCase().trim();
+      const cat = document.getElementById('skillCategoryFilter').value;
+
+      const filtered = loadedSkills.filter(s => {
+        const matchesCat = (cat === 'ALL' || s.category === cat);
+        const matchesQuery = !query || 
+          s.name.toLowerCase().includes(query) || 
+          s.description.toLowerCase().includes(query) || 
+          s.command.toLowerCase().includes(query) ||
+          (s.tools && s.tools.some(t => t.toLowerCase().includes(query)));
+        return matchesCat && matchesQuery;
+      });
+
+      renderSkillsCards(filtered);
+    }
+
+    function useSkill(cmdPattern) {
+      switchTab('chatTab', document.querySelectorAll('.nav-btn')[0]);
+      if (cmdPattern.startsWith('/')) {
+        chatInput.value = cmdPattern.split('<')[0];
+      } else {
+        chatInput.value = cmdPattern + ' ';
+      }
+      chatInput.focus();
+    }
+
+    // Initialize models state on load
+    setTimeout(() => {
+      onOpenModelsTab();
+    }, 500);
+
+    // Poll status periodically
+    setInterval(() => {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_status().then(st => {
+          updateTelemetry(st.used_tokens, st.usage_pct);
+          document.getElementById('ramText').innerText = `${st.ram_free_mb} MB free`;
+          if (st.model) {
+            document.getElementById('activeModelBadge').innerText = `Model: ${st.model}`;
+          }
+        });
+      }
+    }, 5000);
+  </script>
+</body>
+</html>

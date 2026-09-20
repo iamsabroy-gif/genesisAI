@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project-genesis"
+version = "0.1.0"
+description = "Sovereign Local AI Coding Agent on Apple Silicon"
+readme = "implementation_plan.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "pytest>=8.0.0",
+    "pypdf>=5.0.0",
+]
+
+[project.scripts]
+genesis = "genesis.cli:main"
+genesis-gui = "genesis.gui.app:launch_desktop_gui"
+
+[tool.setuptools.packages.find]
+include = ["genesis*"]
+
+

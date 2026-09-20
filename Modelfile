@@ -1,0 +1,6 @@
+FROM qwen2.5-coder:7b
+PARAMETER num_ctx 16384
+PARAMETER num_gpu 99
+PARAMETER temperature 0.2
+# num_keep pins the first N tokens of KV cache (system prompt) across calls
+PARAMETER num_keep 256
