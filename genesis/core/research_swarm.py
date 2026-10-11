@@ -519,6 +519,31 @@ def ingest_research_starting_context(
     return payload
 
 
+_TOOL_CONFIRMATION_PATTERNS = [
+    re.compile(r"\[\s*Confirmation Required\s*\]", re.I),
+    re.compile(r"!CONFIRM\b"),
+    re.compile(r"pending (?:shell )?command is awaiting", re.I),
+    re.compile(r"awaiting your explicit approval", re.I),
+]
+
+PHASE_MAX_ATTEMPTS = 3
+
+
+class ToolConfirmationOutputError(RuntimeError):
+    """A swarm phase kept returning a tool-approval prompt instead of content."""
+
+
+def is_tool_confirmation_output(text: Optional[str]) -> bool:
+    """
+    True if an agent turn returned a tool/shell approval prompt (e.g.
+    '[Confirmation Required] ... Reply !CONFIRM') instead of real research
+    content. Such output must never be treated as a phase result.
+    """
+    if not text:
+        return False
+    return any(p.search(text) for p in _TOOL_CONFIRMATION_PATTERNS)
+
+
 class ResearchWorkerPersona:
     """Specialized persona in the research swarm."""
     def __init__(self, name: str, title: str, system_directive: str):
@@ -591,6 +616,34 @@ class ResearchSwarmCoordinator:
                 ),
             ),
         }
+
+    def _run_phase_turn(self, system_base: Dict[str, Any], prompt: str, phase_label: str) -> str:
+        """
+        Run one agent turn for a swarm phase, rejecting tool-confirmation output.
+        Retries with a clean context and a no-tools directive; raises
+        ToolConfirmationOutputError if the agent never produces real content.
+        """
+        current_prompt = prompt
+        for attempt in range(1, PHASE_MAX_ATTEMPTS + 1):
+            self.agent.messages = [system_base]
+            output = self.agent.run_turn(current_prompt)
+            if not is_tool_confirmation_output(output):
+                return output
+            if self.agent.is_aborted():
+                return output
+            console.print(
+                f"[bold yellow]⚠️ {phase_label}: agent returned a tool-confirmation prompt "
+                f"instead of content (attempt {attempt}/{PHASE_MAX_ATTEMPTS}); retrying...[/bold yellow]"
+            )
+            current_prompt = (
+                prompt
+                + "\n\nIMPORTANT: Do NOT run shell commands or filesystem searches and do not ask "
+                "for approval of any command. Answer directly in text using only the information above."
+            )
+        raise ToolConfirmationOutputError(
+            f"{phase_label} returned a tool-confirmation prompt on {PHASE_MAX_ATTEMPTS} attempts; "
+            f"no research content was produced."
+        )
 
     def run_research_swarm(
         self,
@@ -706,8 +759,7 @@ class ResearchSwarmCoordinator:
                 f"(spanning technical foundations, comparative benchmarks, market data, vendor architectures, risk/failure modes, and future roadmap)\n"
                 f"Be analytical, comprehensive, and non-generic."
             )
-            self.agent.messages = [system_base]
-            charter_output = self.agent.run_turn(architect_prompt)
+            charter_output = self._run_phase_turn(system_base, architect_prompt, "Phase 1 (Architect)")
             dossier["phases"]["phase1_charter"] = charter_output
 
             if self.agent.is_aborted():
@@ -889,8 +941,7 @@ class ResearchSwarmCoordinator:
                 f"4. Quantitative Cost / ROI / Efficiency Trade-Offs cross-referencing extracted empirical metrics\n"
                 f"Be factual, quantitative, and analytically deep."
             )
-            self.agent.messages = [system_base]
-            analyst_output = self.agent.run_turn(analyst_prompt)
+            analyst_output = self._run_phase_turn(system_base, analyst_prompt, "Phase 3 (Analyst)")
             dossier["phases"]["phase3_analysis"] = analyst_output
 
             if self.agent.is_aborted():
@@ -915,8 +966,7 @@ class ResearchSwarmCoordinator:
                 f"2. Identify any missing perspectives, unverified assertions, or format deviations.\n"
                 f"3. Provide exactly 4 mandatory directives for Chief Editor Evelyn to ensure the final deliverable satisfies {fmt['badge']} standards."
             )
-            self.agent.messages = [system_base]
-            auditor_output = self.agent.run_turn(auditor_prompt)
+            auditor_output = self._run_phase_turn(system_base, auditor_prompt, "Phase 4 (Auditor)")
             dossier["phases"]["phase4_audit"] = auditor_output
 
             if self.agent.is_aborted():
@@ -953,13 +1003,11 @@ class ResearchSwarmCoordinator:
                 f"{sections_spec}\n"
                 f"Write with maximum depth, authoritative rigor, and zero conversational filler. Output the FULL report text."
             )
-            self.agent.messages = [system_base]
-            final_report_content = self.agent.run_turn(editor_prompt)
+            final_report_content = self._run_phase_turn(system_base, editor_prompt, "Phase 5 (Editor)")
 
             # If an inference error occurred, attempt recovery with clean prompt
             if final_report_content.startswith("LLM Inference Error:"):
                 console.print(f"[bold yellow]⚠️ Editor turn returned inference error; attempting clean retry...[/bold yellow]")
-                self.agent.messages = [system_base]
                 retry_prompt = (
                     f"Author the final publication research report for '{topic}' in Markdown format.\n\n"
                     f"Format: # {fmt['title_prefix']}: {topic}\n\n"
@@ -967,7 +1015,7 @@ class ResearchSwarmCoordinator:
                     f"ANALYTICAL HIGHLIGHTS:\n{analyst_output[:2000]}\n\n"
                     f"VERIFIED CITATIONS:\n{citations_md[:2000]}"
                 )
-                final_report_content = self.agent.run_turn(retry_prompt)
+                final_report_content = self._run_phase_turn(system_base, retry_prompt, "Phase 5 (Editor retry)")
 
             # Ensure markdown header
             if not final_report_content.strip().startswith("#"):

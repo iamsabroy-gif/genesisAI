@@ -10,7 +10,7 @@ import json
 import hashlib
 import urllib.request
 from functools import lru_cache
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from genesis.config import (
     MAX_CONTEXT_TOKENS,
     PRUNE_TRIGGER_TOKENS,

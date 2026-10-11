@@ -6,7 +6,7 @@ Uses macOS System Events and CoreGraphics AppleScript primitives.
 
 import subprocess
 import shlex
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 
 def run_applescript(script: str) -> Tuple[bool, str]:

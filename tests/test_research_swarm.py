@@ -378,3 +378,39 @@ def test_research_swarm_with_uploaded_starting_context(tmp_path: Path):
             Path(dossier["raw_sources_file"]).unlink()
 
 
+
+
+CONFIRM_NOTICE = (
+    "[Confirmation Required]: A pending shell command is awaiting your explicit approval:\n"
+    "    find /Users/x -name \"*Debit*\"\nReply '!CONFIRM' to execute it."
+)
+
+
+def test_is_tool_confirmation_output():
+    from genesis.core.research_swarm import is_tool_confirmation_output
+    assert is_tool_confirmation_output(CONFIRM_NOTICE)
+    assert is_tool_confirmation_output("blah Reply '!CONFIRM CANCEL' blah")
+    assert not is_tool_confirmation_output("# Report\n\nNormal content.")
+    assert not is_tool_confirmation_output("")
+    assert not is_tool_confirmation_output(None)
+
+
+def test_phase_turn_retries_then_succeeds():
+    agent = GenesisAgent()
+    outputs = iter([CONFIRM_NOTICE, "Real charter content"])
+    with patch.object(agent, "run_turn", side_effect=lambda p: next(outputs)):
+        coord = ResearchSwarmCoordinator(base_agent=agent)
+        out = coord._run_phase_turn({"role": "system", "content": "s"}, "prompt", "Phase 1")
+    assert out == "Real charter content"
+
+
+def test_swarm_errors_and_writes_no_report_on_persistent_confirmation(tmp_path):
+    agent = GenesisAgent()
+    with patch.object(agent, "run_turn", return_value=CONFIRM_NOTICE), \
+         patch("genesis.core.research_swarm.WORKSPACE_ROOT", tmp_path), \
+         patch("genesis.core.research_swarm.RESEARCH_DIR", tmp_path):
+        coord = ResearchSwarmCoordinator(base_agent=agent)
+        dossier = coord.run_research_swarm("Debit Delights")
+    assert dossier["status"] == "ERROR"
+    assert "tool-confirmation" in dossier["error"]
+    assert not list(tmp_path.glob("*.md"))
