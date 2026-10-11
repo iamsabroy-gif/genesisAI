@@ -13,8 +13,6 @@ mdurl==0.1.2
 openai==3.14.1
 packaging==26.3
 pluggy==1.6.0
-# Editable install with no version control (project-genesis==0.1.0)
--e /Users/sabyasachiroy/projects/Learning/Details
 prompt_toolkit==3.0.53
 proxy_tools==0.1.0
 pydantic==2.13.5
